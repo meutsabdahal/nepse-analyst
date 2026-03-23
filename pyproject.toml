@@ -5,5 +5,12 @@ description = "A natural language research assistant for Nepal's retail investor
 readme = "README.md"
 requires-python = ">=3.12.3"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "lxml>=6.0.2",
+    "nepse-api>=1.1.12",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
     "python-dotenv>=1.2.2",
+    "requests>=2.32.5",
+    "tqdm>=4.67.3",
 ]
