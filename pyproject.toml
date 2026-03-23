@@ -1,0 +1,9 @@
+[project]
+name = "nepse-analyst"
+version = "1.0"
+description = "A natural language research assistant for Nepal's retail investors"
+readme = "README.md"
+requires-python = ">=3.12.3"
+dependencies = [
+    "python-dotenv>=1.2.2",
+]
