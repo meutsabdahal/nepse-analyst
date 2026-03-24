@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS {TABLE_IPOS} (
     listing_price    REAL,
     shares_issued    INTEGER,
     total_applicants INTEGER,
+    oversubscription_rate REAL,
     status           TEXT
 );
 """.strip()
