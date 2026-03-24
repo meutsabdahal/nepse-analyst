@@ -232,7 +232,7 @@ Known limitations at project start:
 
 ### v1 — Current
 - [x] Project setup and PRD
-- [ ] SQLite database with all six tables
+- [x] SQLite database with all six tables
 - [ ] Text-to-SQL pipeline with retry logic
 - [ ] Multilingual news corpus and ChromaDB index
 - [ ] Query router with anti-prediction guardrail
