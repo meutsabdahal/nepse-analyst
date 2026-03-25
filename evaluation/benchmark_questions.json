@@ -1,0 +1,290 @@
+{
+    "generated_at": "2026-03-25",
+    "source_db": "data/processed/nepse.db",
+    "sql_benchmark": [
+        {
+            "id": "Q1",
+            "question": "Which commercial bank has the highest EPS in the latest fiscal year?",
+            "tables_used": [
+                "fundamentals",
+                "companies"
+            ],
+            "difficulty": "easy",
+            "ground_truth": {
+                "answer": "NABIL",
+                "value": 35.18,
+                "fiscal_year": "2082/83",
+                "unit": "NPR per share"
+            },
+            "ground_truth_sql": "SELECT c.symbol, f.eps, f.fiscal_year FROM fundamentals f JOIN companies c ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) ORDER BY f.eps DESC LIMIT 1",
+            "notes": "Merolagani cache check for NABIL EPS is consistent (35.18)."
+        },
+        {
+            "id": "Q2",
+            "question": "List all hydropower companies that have paid cash dividends for 3 or more consecutive years.",
+            "tables_used": [
+                "dividends",
+                "companies"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "count": 19,
+                "symbols": [
+                    "AHPC",
+                    "AKPL",
+                    "BGWT",
+                    "BHDC",
+                    "BPCL",
+                    "CHCL",
+                    "KPCL",
+                    "MEN",
+                    "MHL",
+                    "NGPL",
+                    "NHDL",
+                    "RADHI",
+                    "RHPC",
+                    "RURU",
+                    "SHPC",
+                    "SIKLES",
+                    "SMHL",
+                    "UMHL",
+                    "UMRH"
+                ],
+                "rule": "cash_dividend > 0 and at least one run of 3+ consecutive fiscal years"
+            },
+            "ground_truth_sql": "SELECT d.symbol, d.fiscal_year FROM dividends d JOIN companies c ON c.symbol = d.symbol WHERE c.sector = 'Hydropower' AND COALESCE(d.cash_dividend,0) > 0 ORDER BY d.symbol, CAST(SUBSTR(d.fiscal_year,1,4) AS INT)",
+            "notes": "Consecutiveness is computed in evaluation code after SQL extraction."
+        },
+        {
+            "id": "Q3",
+            "question": "What is the P/E ratio comparison of the top 5 commercial banks by market capitalisation?",
+            "tables_used": [
+                "fundamentals",
+                "companies"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "status": "data_unavailable",
+                "reason": "companies.market_cap is NULL for all symbols in current snapshot",
+                "fallback_pe_sample_desc": [
+                    {
+                        "symbol": "NICA",
+                        "pe_ratio": 220.45
+                    },
+                    {
+                        "symbol": "ADBL",
+                        "pe_ratio": 62.1
+                    },
+                    {
+                        "symbol": "CZBIL",
+                        "pe_ratio": 49.74
+                    },
+                    {
+                        "symbol": "PRVU",
+                        "pe_ratio": 26.45
+                    },
+                    {
+                        "symbol": "SCB",
+                        "pe_ratio": 24.83
+                    }
+                ]
+            },
+            "ground_truth_sql": "SELECT c.symbol, c.market_cap, f.pe_ratio FROM companies c JOIN fundamentals f ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND c.market_cap IS NOT NULL ORDER BY c.market_cap DESC LIMIT 5",
+            "notes": "Benchmark intent is valid; current DB cannot answer due to missing market cap values."
+        },
+        {
+            "id": "Q4",
+            "question": "Which sector has had the highest average daily turnover over the last 30 trading days?",
+            "tables_used": [
+                "price_history",
+                "companies"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "answer": "Hydropower",
+                "value": 97223987.79,
+                "unit": "NPR average turnover"
+            },
+            "ground_truth_sql": "WITH last_30_days AS (SELECT trade_date FROM price_history GROUP BY trade_date ORDER BY trade_date DESC LIMIT 30) SELECT c.sector, ROUND(AVG(p.turnover),2) AS avg_daily_turnover FROM price_history p JOIN companies c ON c.symbol = p.symbol WHERE p.trade_date IN (SELECT trade_date FROM last_30_days) GROUP BY c.sector ORDER BY avg_daily_turnover DESC LIMIT 1",
+            "notes": "Turnover dominance by Hydropower is plausible for this period."
+        },
+        {
+            "id": "Q5",
+            "question": "Which companies have shown consistent EPS growth for 3 consecutive fiscal years?",
+            "tables_used": [
+                "fundamentals"
+            ],
+            "difficulty": "hard",
+            "ground_truth": {
+                "count": 0,
+                "symbols": [],
+                "rule": "strictly increasing EPS across consecutive fiscal years"
+            },
+            "ground_truth_sql": "SELECT symbol, fiscal_year, eps FROM fundamentals WHERE eps IS NOT NULL ORDER BY symbol, CAST(SUBSTR(fiscal_year,1,4) AS INT)",
+            "notes": "Consecutive-year growth detection is computed in evaluation code. Sparse fiscal coverage leads to zero matches."
+        },
+        {
+            "id": "Q6",
+            "question": "What are the top 5 most oversubscribed IPOs in NEPSE history?",
+            "tables_used": [
+                "ipos"
+            ],
+            "difficulty": "easy",
+            "ground_truth": {
+                "status": "data_unavailable",
+                "reason": "ipos.oversubscription_rate is NULL for all rows"
+            },
+            "ground_truth_sql": "SELECT symbol, company_name, oversubscription_rate FROM ipos WHERE oversubscription_rate IS NOT NULL ORDER BY oversubscription_rate DESC LIMIT 5",
+            "notes": "Need oversubscription enrichment from issue/applicant data source to make this benchmark answerable."
+        },
+        {
+            "id": "Q7",
+            "question": "Compare total bonus shares issued by the banking sector vs. the hydropower sector in FY 2080/81.",
+            "tables_used": [
+                "dividends",
+                "companies"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "fiscal_year": "2080/81",
+                "comparison": [
+                    {
+                        "sector_group": "Hydropower",
+                        "total_bonus_shares": 19.5
+                    },
+                    {
+                        "sector_group": "Banking",
+                        "total_bonus_shares": 7.5
+                    }
+                ],
+                "winner": "Hydropower"
+            },
+            "ground_truth_sql": "SELECT CASE WHEN c.sector IN ('Commercial Banks','Development Banks','Finance Companies') THEN 'Banking' WHEN c.sector = 'Hydropower' THEN 'Hydropower' END AS sector_group, ROUND(SUM(COALESCE(d.bonus_shares,0)),2) AS total_bonus_shares FROM dividends d JOIN companies c ON c.symbol = d.symbol WHERE d.fiscal_year = '2080/81' AND (c.sector IN ('Commercial Banks','Development Banks','Finance Companies') OR c.sector = 'Hydropower') GROUP BY sector_group ORDER BY total_bonus_shares DESC",
+            "notes": "Banking bucket includes Commercial Banks, Development Banks, and Finance Companies."
+        },
+        {
+            "id": "Q8",
+            "question": "Which company currently has the highest book value per share?",
+            "tables_used": [
+                "fundamentals",
+                "companies"
+            ],
+            "difficulty": "easy",
+            "ground_truth": {
+                "answer": "RBB",
+                "value": 345.64,
+                "fiscal_year": "2082/83",
+                "unit": "NPR per share"
+            },
+            "ground_truth_sql": "SELECT f.symbol, f.book_value, f.fiscal_year FROM fundamentals f WHERE f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND f.book_value IS NOT NULL ORDER BY f.book_value DESC LIMIT 1",
+            "notes": "Highest is based on latest fiscal year available in fundamentals table."
+        },
+        {
+            "id": "Q9",
+            "question": "What is the 52-week high and low for NABIL Bank?",
+            "tables_used": [
+                "price_history"
+            ],
+            "difficulty": "easy",
+            "ground_truth": {
+                "symbol": "NABIL",
+                "high_52w": 562.0,
+                "low_52w": 471.0,
+                "unit": "NPR",
+                "window_rule": "last 365 days from latest available trade date for NABIL"
+            },
+            "ground_truth_sql": "WITH ref AS (SELECT MAX(trade_date) AS max_date FROM price_history WHERE symbol = 'NABIL') SELECT MIN(low_price) AS low_52w, MAX(high_price) AS high_52w FROM price_history, ref WHERE symbol = 'NABIL' AND trade_date > date(max_date, '-365 day')",
+            "notes": "Matches cached Merolagani value 562.00-471.00."
+        },
+        {
+            "id": "Q10",
+            "question": "Which microfinance company has the highest ROE in the latest fiscal year?",
+            "tables_used": [
+                "fundamentals",
+                "companies"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "status": "data_unavailable",
+                "reason": "No microfinance symbols currently exist in fundamentals table"
+            },
+            "ground_truth_sql": "SELECT f.symbol, f.roe, f.fiscal_year FROM fundamentals f JOIN companies c ON c.symbol = f.symbol WHERE c.sector = 'Microfinance' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND f.roe IS NOT NULL ORDER BY f.roe DESC LIMIT 1",
+            "notes": "Requires fundamentals ingestion for microfinance universe."
+        },
+        {
+            "id": "Q11",
+            "question": "How has the NEPSE Banking Index performed compared to the main NEPSE index over the past year?",
+            "tables_used": [
+                "indices"
+            ],
+            "difficulty": "medium",
+            "ground_truth": {
+                "comparison": [
+                    {
+                        "index_name": "Banking",
+                        "start_date": "2007-04-19",
+                        "end_date": "2007-10-16",
+                        "pct_change": 115.89
+                    },
+                    {
+                        "index_name": "NEPSE",
+                        "start_date": "2007-04-19",
+                        "end_date": "2007-10-16",
+                        "pct_change": 71.49
+                    }
+                ],
+                "outperformed": "Banking"
+            },
+            "ground_truth_sql": "WITH latest AS (SELECT MAX(trade_date) AS max_date FROM indices), windowed AS (SELECT i.index_name, i.trade_date, i.close_value FROM indices i, latest l WHERE i.trade_date > date(l.max_date, '-365 day') AND i.index_name IN ('NEPSE','Banking')), first_last AS (SELECT index_name, MIN(trade_date) AS start_date, MAX(trade_date) AS end_date FROM windowed GROUP BY index_name) SELECT f.index_name, f.start_date, f.end_date, ROUND((e.close_value - s.close_value) * 100.0 / s.close_value, 2) AS pct_change FROM first_last f JOIN windowed s ON s.index_name = f.index_name AND s.trade_date = f.start_date JOIN windowed e ON e.index_name = f.index_name AND e.trade_date = f.end_date ORDER BY f.index_name",
+            "notes": "Source index history is old in current snapshot; performance is mathematically correct for available window but not a current-year market view."
+        },
+        {
+            "id": "Q12",
+            "question": "Which companies had an IPO listing price at least 50% above their issue price in the last 3 years?",
+            "tables_used": [
+                "ipos"
+            ],
+            "difficulty": "hard",
+            "ground_truth": {
+                "count": 8,
+                "results": [
+                    {
+                        "symbol": "MEN",
+                        "listing_premium_pct": 565.0
+                    },
+                    {
+                        "symbol": "NIFRA",
+                        "listing_premium_pct": 465.0
+                    },
+                    {
+                        "symbol": "GLH",
+                        "listing_premium_pct": 279.0
+                    },
+                    {
+                        "symbol": "NRN",
+                        "listing_premium_pct": 274.0
+                    },
+                    {
+                        "symbol": "RHPL",
+                        "listing_premium_pct": 110.0
+                    },
+                    {
+                        "symbol": "LEC",
+                        "listing_premium_pct": 104.0
+                    },
+                    {
+                        "symbol": "CGH",
+                        "listing_premium_pct": 61.0
+                    },
+                    {
+                        "symbol": "HURJA",
+                        "listing_premium_pct": 60.0
+                    }
+                ],
+                "window_rule": "3 years back from latest listing_date in ipos table"
+            },
+            "ground_truth_sql": "WITH latest AS (SELECT MAX(listing_date) AS max_listing_date FROM ipos) SELECT symbol, ROUND((listing_price - issue_price) * 100.0 / issue_price, 2) AS listing_premium_pct FROM ipos, latest WHERE listing_date >= date(max_listing_date, '-3 year') AND issue_price IS NOT NULL AND listing_price IS NOT NULL AND listing_price >= issue_price * 1.5 ORDER BY listing_premium_pct DESC",
+            "notes": "High IPO listing premiums in this period are plausible for NEPSE market conditions around 2019-2021 listings."
+        }
+    ]
+}
