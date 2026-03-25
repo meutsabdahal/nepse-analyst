@@ -197,3 +197,18 @@ def execute_query(sql: str) -> dict:
             "row_count": 0,
             "error": str(e),
         }
+
+
+def get_schema_summary() -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    tables = [r[0] for r in cursor.fetchall()]
+    lines = []
+    for table in tables:
+        cursor.execute(f"PRAGMA table_info({table})")
+        cols = cursor.fetchall()
+        col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
+        lines.append(f"{table}({col_defs})")
+    conn.close()
+    return "\n".join(lines)
