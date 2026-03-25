@@ -172,3 +172,28 @@ def create_database():
     cursor.executescript(FULL_SCHEMA_SQL)  # combined CREATE TABLE + INDEX string
     conn.commit()
     conn.close()
+
+
+def execute_query(sql: str) -> dict:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        conn.close()
+        return {
+            "success": True,
+            "rows": [dict(zip(columns, row)) for row in rows],
+            "columns": columns,
+            "row_count": len(rows),
+            "error": None,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "rows": [],
+            "columns": [],
+            "row_count": 0,
+            "error": str(e),
+        }
