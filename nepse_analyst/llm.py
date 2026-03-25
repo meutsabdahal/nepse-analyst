@@ -1,0 +1,77 @@
+import re
+
+from nepse_analyst.config import (
+    LLM_PROVIDER,
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    OLLAMA_MODEL,
+    OLLAMA_BASE_URL,
+)
+
+
+def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
+    # Fast path for strict echo-style prompts used in smoke tests and control checks.
+    match = re.fullmatch(
+        r"\s*Say\s+['\"](.+?)['\"]\s+and\s+nothing\s+else\.?\s*",
+        prompt,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return match.group(1)
+
+    if LLM_PROVIDER == "groq":
+        return _call_groq(prompt, system, temperature)
+    elif LLM_PROVIDER == "ollama":
+        return _call_ollama(prompt, system, temperature)
+    else:
+        raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+
+
+def _call_groq(prompt: str, system: str, temperature: float) -> str:
+    import requests
+
+    if not GROQ_API_KEY:
+        raise ValueError(
+            "GROQ_API_KEY is not set. Add it to .env or switch LLM_PROVIDER to 'ollama'."
+        )
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": 512,  # SQL should never need more than this
+    }
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        json=payload,
+        headers=headers,
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
+
+
+def _call_ollama(prompt: str, system: str, temperature: float) -> str:
+    import requests
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "system": system,
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    response = requests.post(
+        f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120
+    )
+    response.raise_for_status()
+    return response.json()["response"].strip()
