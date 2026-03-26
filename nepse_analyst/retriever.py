@@ -1,3 +1,9 @@
+import numpy as np
+
+# ChromaDB 0.5.x expects np.float_ at import time, which was removed in NumPy 2.x.
+if not hasattr(np, "float_"):
+    np.float_ = np.float64
+
 import chromadb
 from nepse_analyst.config import VECTOR_STORE_DIR, NEWS_COLLECTION, TOP_K_RAG
 from nepse_analyst.embeddings import encode_query
