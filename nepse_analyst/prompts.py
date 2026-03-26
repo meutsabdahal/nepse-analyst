@@ -87,3 +87,38 @@ Now write the SQL query for this question. Return ONLY the SQL. No explanation, 
 
 Question: {question}
 SQL:"""
+
+
+def build_rag_synthesis_prompt(
+    query: str, passages: list[dict], query_language: str = "en"
+) -> str:
+    # Format the retrieved passages for the prompt
+    passage_text = ""
+    for i, p in enumerate(passages, 1):
+        passage_text += (
+            f"[{i}] Source: {p['source'].upper()} | "
+            f"Date: {p['published_at']} | "
+            f"Title: {p['title']}\n"
+            f"{p['content'][:600]}\n\n"
+        )
+
+    language_instruction = (
+        "Respond in Nepali (Devanagari script)."
+        if query_language == "ne"
+        else "Respond in English."
+    )
+
+    return f"""You are a NEPSE (Nepal Stock Exchange) research assistant. 
+Answer the user's question based ONLY on the news passages provided below.
+Do not use any information not present in these passages.
+If the passages do not contain enough information to answer the question, say so clearly.
+{language_instruction}
+Cite your sources by referring to passage numbers [1], [2], etc.
+Do NOT make any investment recommendations or price predictions.
+
+USER QUESTION: {query}
+
+RETRIEVED NEWS PASSAGES:
+{passage_text}
+
+ANSWER (based only on the passages above):"""
