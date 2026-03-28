@@ -1,273 +1,158 @@
 # NEPSE Analyst
 
-> A natural language research assistant for Nepal's retail investors.
+A natural language research assistant for Nepal's retail investors.
 
-[![Status](https://img.shields.io/badge/status-in%20development-yellow)]()
-[![Python](https://img.shields.io/badge/python-3.10+-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
+## Financial Disclaimer
 
----
+NEPSE Analyst is a research information tool only. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.
 
-## Disclaimer
+## Current Status
 
-**NEPSE Analyst is a research information tool only. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.**
-
----
-
-## Overview
-
-NEPSE Analyst lets you ask natural language questions about Nepal's stock market and receive accurate, data-grounded answers without needing to navigate multiple websites or write a single line of code.
-
-**Example questions you can ask:**
-
-- *"Which commercial bank has the highest EPS in the latest fiscal year?"*
-- *"List all hydropower companies that have paid cash dividends for 3 or more consecutive years."*
-- *"What is the 52-week high and low for NABIL Bank?"*
-- *"Which sector had the highest average turnover over the last 30 trading days?"*
-- *"कुन कम्पनीले हालसालै बोनस सेयर घोषणा गर्यो?"*
-
-**What it does not do:** NEPSE Analyst does not predict stock prices, generate buy/sell signals, or provide investment recommendations. This is by design.
-
----
-
-## Demo
-
-> **Live demo coming soon** — will be hosted on Hugging Face Spaces upon project completion.
-
----
+Implemented:
+- Hybrid query flow: SQL, RAG, HYBRID, DIRECT, and OOS guardrail routing.
+- Multilingual handling for English and Nepali inputs.
+- Guardrails for prediction and advice queries with mandatory disclaimer injection.
+- Streamlit UI with:
+  - natural language input,
+  - example question sidebar,
+  - source transparency panel,
+  - data freshness indicator,
+  - company quick-facts card.
+- Benchmark runner CLI for SQL and OOS reporting.
+- Hugging Face Spaces-ready app entrypoint and uv-based dependency workflow.
 
 ## Architecture
 
-NEPSE Analyst uses a **hybrid retrieval architecture** with two data pathways controlled by an intelligent query router:
+User Query (EN/NE)
+-> Router
+-> SQL / RAG / HYBRID / DIRECT / OOS
+-> Answer synthesis
+-> Streamlit response card + transparency panel
 
-```
-User Query (English or Nepali)
-        │
-        ▼
-┌─────────────────────┐
-│   Query Router      │  ← classifies intent
-└──────────┬──────────┘
-           │
-     ┌─────┴──────┐
-     ▼            ▼
-┌─────────┐  ┌─────────────┐
-│Text-to  │  │ Multilingual│
-│  SQL    │  │    RAG      │
-│         │  │             │
-│ SQLite  │  │  ChromaDB   │
-│  DB     │  │  + News     │
-└────┬────┘  └──────┬──────┘
-     └──────┬───────┘
-            ▼
-   ┌─────────────────┐
-   │ Answer          │
-   │ Synthesiser     │  ← natural language response
-   └─────────────────┘
-```
+Core package lives in nepse_analyst/ and UI lives in app/.
 
-| Pathway | Used For |
-|---|---|
-| **Text-to-SQL** | Price history, EPS, P/E ratios, dividends, IPO data, sector comparisons |
-| **Multilingual RAG** | Recent news, company announcements, AGM notices, regulatory updates |
-| **Direct LLM** | Stable general facts about NEPSE structure and market mechanics |
-| **Out of scope** | Price predictions and investment advice — declined with explanation |
+## Repository Layout
 
----
+- app/main.py: Streamlit UI entrypoint.
+- app/components.py: Answer card, source panel, quick-facts rendering.
+- app/example_questions.py: Sidebar prompt list.
+- app.py: Root HF Spaces-compatible entrypoint.
+- nepse_analyst/pipeline.py: End-to-end query orchestration.
+- nepse_analyst/router.py: Query routing and entity extraction.
+- nepse_analyst/sql_generator.py: Text-to-SQL generation and execution.
+- nepse_analyst/retriever.py: ChromaDB retrieval.
+- nepse_analyst/guardrails.py: Advice/prediction rejection logic.
+- scripts/evaluate_benchmark.py: Benchmark runner.
+- scripts/build_db.py: Database schema build command.
+- scripts/refresh_news.py: News refresh command wrapper.
+- evaluation/benchmark_questions.json: SQL benchmark definitions.
+- evaluation/results/: Saved evaluation reports.
 
-## Tech Stack
+## Quick Start
 
-| Layer | Technology |
-|---|---|
-| LLM (cloud) | Groq API — `llama-3.1-8b-instant` |
-| LLM (local fallback) | Ollama — `llama3.2:3b` |
-| Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` |
-| Vector store | ChromaDB (local persistence) |
-| Structured store | SQLite |
-| Data ingestion | `nepse-api`, `requests`, `BeautifulSoup4` |
-| UI | Streamlit |
-| Deployment | Hugging Face Spaces |
+Prerequisites:
+- Python 3.12+
+- Local data artifacts prepared (SQLite DB and vector store)
+- Optional: Groq API key for cloud LLM mode
 
----
+1) Install dependencies (uv)
 
-## Data Sources
+- uv sync
 
-| Source | Type | Data |
-|---|---|---|
-| nepse-api (PyPI) | Structured | Real-time prices, OHLCV history, indices |
-| Merolagani | Semi-structured | EPS, P/E, book value, dividend history |
-| Sharesansar | Unstructured | News, announcements, AGM notices |
-| NepseAlpha | Unstructured | Market analysis articles |
-| Kaggle — NEPSE companies | Structured | 520 listed companies, sectors |
-| OpenNepal | Structured | Historical index data |
+2) Configure environment
 
-> All data is used for educational and non-commercial portfolio purposes only. An official NEPSE data licence would be required for any commercial deployment.
+Copy .env.example to .env and set values:
+- LLM_PROVIDER=groq or ollama
+- GROQ_API_KEY=... (if using groq)
+- OLLAMA_MODEL=llama3.2:3b (if using ollama)
 
----
+3) Ensure data artifacts exist
 
-## Project Structure
+- SQLite DB: data/processed/nepse.db
+- ChromaDB directory: data/vector_store/
 
-```
-nepse-analyst/
-├── notebooks/                  # Google Colab — heavy data processing
-│   ├── 01_ingest_companies.ipynb
-│   ├── 02_ingest_price_history.ipynb
-│   ├── 03_ingest_fundamentals.ipynb
-│   ├── 04_ingest_ipos.ipynb
-│   ├── 05_ingest_news.ipynb
-│   └── 06_evaluation.ipynb
-│
-├── nepse_analyst/              # Core Python package
-│   ├── config.py               # All settings and paths
-│   ├── database.py             # SQLite interface
-│   ├── llm.py                  # Groq / Ollama switcher
-│   ├── embeddings.py           # Multilingual embedding model
-│   ├── retriever.py            # ChromaDB search
-│   ├── sql_generator.py        # Text-to-SQL pipeline
-│   ├── router.py               # Query classifier
-│   ├── language_detector.py    # English / Nepali detection
-│   ├── guardrails.py           # Anti-prediction guard + disclaimer
-│   ├── pipeline.py             # End-to-end query function
-│   └── prompts.py              # All LLM prompt templates
-│
-├── app/
-│   ├── main.py                 # Streamlit entry point
-│   ├── components.py           # UI components
-│   └── example_questions.py   # Sidebar example questions
-│
-├── data/
-│   ├── raw/
-│   │   └── nepse_companies_kaggle.csv
-│   ├── processed/              # nepse.db — gitignored, regenerable
-│   └── vector_store/           # ChromaDB index — gitignored, regenerable
-│
-├── evaluation/
-│   ├── benchmark_questions.json
-│   └── results/
-│
-├── scripts/
-│   ├── build_db.py
-│   ├── refresh_prices.py
-│   └── refresh_news.py
-│
-├── .env.example
-├── requirements.txt
-└── README.md
-```
+If DB schema is missing:
+- python scripts/build_db.py
 
----
+For full data ingestion/index refresh use notebooks:
+- notebooks/ingest_companies.ipynb
+- notebooks/ingest_price_history.ipynb
+- notebooks/ingest_fundamentals.ipynb
+- notebooks/ingest_ipos.ipynb
+- notebooks/ingest_news.ipynb
 
-## Setup
+4) Run the app
 
-> **Full setup instructions will be added upon project completion.**  
-> The steps below outline the intended setup process.
-
-### Prerequisites
-
-- Python 3.10+
-- A free [Groq API key](https://console.groq.com)
-- Google Colab access (free) for data processing
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/meutsabdahal/nepse-analyst.git
-cd nepse-analyst
-```
-
-### 2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env and add your GROQ_API_KEY
-```
-
-### 4. Build the database
-
-Run the Colab notebooks in order (`01` through `05`) to populate the SQLite database and ChromaDB vector store. Download the outputs and place them in `data/processed/` and `data/vector_store/` respectively.
-
-### 5. Run the app
-
-```bash
-streamlit run app/main.py
-```
-
----
+- streamlit run app.py
 
 ## Evaluation
 
-NEPSE Analyst is evaluated against a defined benchmark of 12 structured SQL queries and 5 news retrieval queries, with ground truth answers computed from raw data before the system was built.
+Run benchmark in ground-truth mode (validates benchmark SQL against DB):
+- python scripts/evaluate_benchmark.py --mode ground-truth
 
-> **Benchmark results will be published here upon project completion.**
+Run benchmark in pipeline mode (requires configured LLM):
+- python scripts/evaluate_benchmark.py --mode pipeline
 
-| Category | Questions | Target Accuracy |
-|---|---|---|
-| Structured SQL queries | 12 | ≥ 75% |
-| News retrieval (RAG) | 5 | ≥ 80% relevance |
-| Out-of-scope rejection | 4 | ≥ 90% |
+Reports are written to evaluation/results/ as JSON.
 
-Evaluation notebook: [`notebooks/06_evaluation.ipynb`](notebooks/06_evaluation.ipynb)
+Metrics currently reported by runner:
+- SQL accuracy (exact/partial scoring)
+- OOS rejection accuracy on 10 test queries
 
----
+Latest local report:
+- evaluation/results/report_ground-truth_20260328_162650.json
 
-## Limitations
+Latest measured values on this repository snapshot:
+- SQL accuracy (ground-truth mode): 100.00%
+- OOS rejection accuracy: 90.00%
 
-> **This section will be updated with honest findings after the benchmark evaluation is complete.**
+## Tests
 
-Known limitations at project start:
+Run regression tests:
+- python -m unittest discover -s tests -p "test_*.py"
 
-- Price history and news data are refreshed periodically, not in real time. All responses include a data last-updated timestamp.
-- Fundamental data (EPS, P/E, book value) coverage varies by company. The system communicates clearly when data is unavailable for a specific company or fiscal year.
-- Nepali language support covers query understanding and response synthesis. Full Nepali UI is not available in v1.
-- Statistical outputs may differ slightly from official NEPSE or Merolagani figures due to data source coverage differences.
+## Streamlit Features
 
----
+- Answer card with route and status.
+- Data freshness line for each response.
+- Expandable transparency panel showing SQL, SQL row preview, and retrieved passages.
+- Quick-facts panel for detected company symbol.
+- Clickable example prompts from sidebar.
 
-## Roadmap
+## Hugging Face Spaces Deployment
 
-### v1 — Current
-- [x] Project setup and PRD
-- [x] SQLite database with all six tables
-- [ ] Text-to-SQL pipeline with retry logic
-- [ ] Multilingual news corpus and ChromaDB index
-- [ ] Query router with anti-prediction guardrail
-- [ ] Streamlit web app
-- [ ] Hugging Face Spaces deployment
-- [ ] Benchmark evaluation and results
+This repository includes:
+- app.py (root entrypoint)
+- pyproject.toml
+- uv.lock
+- runtime.txt
 
-### v2 — Planned
-- [ ] Price charts (6-month and 1-year)
-- [ ] Portfolio screener with custom filters
-- [ ] Real-time price refresh during market hours
-- [ ] Government bonds and debentures data
-- [ ] Full Nepali UI localisation
+Suggested Space settings:
+- SDK: Streamlit
+- Python: 3.12
+- Hardware: CPU basic (free tier is acceptable)
 
----
+Deployment steps:
+1. Create a new Streamlit Space on Hugging Face.
+2. Push this repository to the Space.
+3. In build/startup command, install from lockfile: uv sync --frozen
+4. Add secrets/environment variables in Space settings:
+   - GROQ_API_KEY (if using Groq)
+   - LLM_PROVIDER
+5. Ensure data artifacts are present in the Space storage (or downloaded on startup).
+6. Launch and verify app loads, then run SQL/RAG/OOS sample queries.
 
-## Contributing
+## Known Data Constraints
 
-This is a solo portfolio project currently under active development. Contributions, issues, and suggestions are welcome once v1 is released.
+From current benchmark dataset snapshot:
+- Q3 is data_unavailable due to missing market_cap values.
+- Q6 is data_unavailable due to missing IPO oversubscription_rate values.
+- Q10 is data_unavailable due to missing microfinance fundamentals coverage.
 
----
-
-## Author
-
-**Utsab Dahal**  
-[GitHub](https://github.com/meutsabdahal) · [X / Twitter](https://x.com/meutsabdahal)
-
----
+These are expected data coverage limitations and should be documented in evaluation results.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See LICENSE.
 
-Data used in this project is sourced from third-party providers for educational and non-commercial purposes only. Refer to each data source's terms of use before any commercial application.
-
----
-
-*Started: March 2026 · Target completion: September 2026*
+Data sources are third-party and used for educational, non-commercial portfolio purposes only.

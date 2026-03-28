@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""
-Rebuild the entire nepse.db from scratch.
-Run this after downloading fresh data from Colab notebooks.
-Usage: python scripts/build_db.py
+"""Rebuild the SQLite schema for data/processed/nepse.db.
+
+Run this after downloading fresh data artifacts from ingestion notebooks.
+Usage: python -m nepse_analyst.build_db
 """
 import sys
 import os

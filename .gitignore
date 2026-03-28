@@ -213,3 +213,6 @@ data/vector_store/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# Generated benchmark outputs
+evaluation/results/*.json

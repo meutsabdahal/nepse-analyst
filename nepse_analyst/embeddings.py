@@ -7,7 +7,26 @@ def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         print(f"Loading embedding model: {EMBEDDING_MODEL} (first call only)...")
-        _model = SentenceTransformer(EMBEDDING_MODEL)
+        model_candidates = [EMBEDDING_MODEL]
+        if "/" not in EMBEDDING_MODEL:
+            model_candidates.append(f"sentence-transformers/{EMBEDDING_MODEL}")
+
+        last_error = None
+        for candidate in model_candidates:
+            try:
+                _model = SentenceTransformer(candidate)
+                break
+            except Exception as e:
+                last_error = e
+
+        if _model is None:
+            raise RuntimeError(
+                "Unable to load embedding model for RAG. "
+                f"Tried: {', '.join(model_candidates)}. "
+                "Ensure internet/Hugging Face access is available, or pre-download the model "
+                "to a local path and set EMBEDDING_MODEL accordingly. "
+                f"Original error: {last_error}"
+            )
         print("Embedding model loaded.")
     return _model
 

@@ -1,4 +1,5 @@
 from nepse_analyst.language_detector import detect_language
+import re
 
 # English prediction/advice signals
 _PREDICTION_KEYWORDS_EN = [
@@ -16,14 +17,6 @@ _PREDICTION_KEYWORDS_EN = [
     "predict",
     "forecast",
     "target price",
-    "should i buy",
-    "should i sell",
-    "should i hold",
-    "buy or sell",
-    "good time to buy",
-    "good time to sell",
-    "when to buy",
-    "when to sell",
     "best stock",
     "best shares",
     "quick returns",
@@ -78,6 +71,9 @@ def is_prediction_query(query: str) -> bool:
     q_lower = query.lower()
     if any(kw in q_lower for kw in _PREDICTION_KEYWORDS_EN):
         return True
+    # Handle variable token spans like "Will NABIL stock go up tomorrow?"
+    if re.search(r"\bwill\b.*\bgo\s+(up|down)\b", q_lower):
+        return True
     if any(kw in query for kw in _PREDICTION_KEYWORDS_NE):
         return True
     return False
@@ -92,6 +88,14 @@ def is_advice_query(query: str) -> bool:
     advice_signals = [
         "should i",
         "should we",
+        "should i buy",
+        "should i sell",
+        "should i hold",
+        "buy or sell",
+        "good time to buy",
+        "good time to sell",
+        "when to buy",
+        "when to sell",
         "recommend",
         "advice",
         "advise",
@@ -183,7 +187,7 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
     return {
         "success": True,
         "answer": message + disclaimer,
-        "route": "out_of_scope",
+        "route": "OOS",
         "guardrail_type": guardrail_type,
         "sql": None,
         "passages": [],

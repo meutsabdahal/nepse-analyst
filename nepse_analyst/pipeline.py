@@ -93,12 +93,33 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
 def _handle_rag(query: str, language: str, entities: dict) -> dict:
     """Execute the multilingual RAG pathway."""
     # Use entity metadata for filtered retrieval when a symbol is detected
-    passages = search(
-        query=query,
-        top_k=5,
-        symbol_filter=entities.get("symbol") or None,
-        sector_filter=entities.get("sector") or None
-    )
+    try:
+        passages = search(
+            query=query,
+            top_k=5,
+            symbol_filter=entities.get("symbol") or None,
+            sector_filter=entities.get("sector") or None,
+        )
+    except Exception as e:
+        answer = (
+            "News retrieval is currently unavailable because the embedding/vector stack could not be loaded. "
+            "Please verify model availability and retry."
+        )
+        if language == "ne":
+            answer = (
+                "समाचार खोज सुविधा हाल उपलब्ध छैन। "
+                "एम्बेडिङ मोडेल वा भेक्टर स्टोर लोड हुन सकेन।"
+            )
+        return {
+            "success": False,
+            "answer": append_disclaimer(answer, language),
+            "route": "RAG",
+            "sql": None,
+            "passages": [],
+            "query_language": language,
+            "data_freshness": "News data freshness unknown",
+            "error": str(e),
+        }
 
     if not passages:
         answer = (
