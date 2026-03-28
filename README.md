@@ -99,12 +99,8 @@ Metrics currently reported by runner:
 - SQL accuracy (exact/partial scoring)
 - OOS rejection accuracy on 10 test queries
 
-Latest local report:
-- evaluation/results/report_ground-truth_20260328_162650.json
-
-Latest measured values on this repository snapshot:
-- SQL accuracy (ground-truth mode): 100.00%
-- OOS rejection accuracy: 90.00%
+Example output file:
+- evaluation/results/report_ground-truth_<timestamp>.json
 
 ## Tests
 

@@ -1,7 +1,9 @@
 [theme]
 base = "light"
-primaryColor = "#8B1A1A"
-backgroundColor = "#FCFBF8"
-secondaryBackgroundColor = "#F5EFE3"
-textColor = "#1F2633"
-font = "serif"
+# The following keys are valid for Streamlit, but some TOML schema validators
+# report false-positive oneOf conflicts for these values in VS Code.
+# primaryColor = "#8B1A1A"
+# backgroundColor = "#FCFBF8"
+# secondaryBackgroundColor = "#F5EFE3"
+# textColor = "#1F2633"
+# font = "serif"

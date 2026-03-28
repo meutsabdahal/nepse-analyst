@@ -33,15 +33,14 @@ _PREDICTION_KEYWORDS_EN = [
 _PREDICTION_KEYWORDS_NE = [
     "बढ्छ",
     "घट्छ",
-    "किन्नु",
-    "बेच्नु",
-    "राम्रो छ",
-    "राम्रो सेयर",
-    "लगानी गर्नु",
-    "फाइदा",
     "नाफा हुन्छ",
     "मूल्य बढ्छ",
     "मूल्य घट्छ",
+    "भोलि",
+    "अर्को हप्ता",
+    "अर्को महिना",
+    "लक्ष्य मूल्य",
+    "भविष्य मूल्य",
 ]
 
 _DISCLAIMER_EN = (
@@ -121,10 +120,10 @@ def get_guardrail_type(query: str) -> str | None:
     Returns 'prediction', 'advice', or None if the query passes all guardrails.
     Call this before routing — if it returns non-None, skip retrieval entirely.
     """
-    if is_prediction_query(query):
-        return "prediction"
     if is_advice_query(query):
         return "advice"
+    if is_prediction_query(query):
+        return "prediction"
     return None
 
 
