@@ -17,7 +17,9 @@ def _extract_symbol(result: dict[str, Any], query: str) -> str | None:
 
     # Fall back to uppercase tokens from query (2-6 chars) that exist in companies table.
     tokens = [t.strip(" ,.?()[]{}:") for t in query.split()]
-    candidates = [t.upper() for t in tokens if t.isascii() and t.isalpha() and 2 <= len(t) <= 6]
+    candidates = [
+        t.upper() for t in tokens if t.isascii() and t.isalpha() and 2 <= len(t) <= 6
+    ]
     if not candidates:
         return None
 

@@ -28,13 +28,29 @@ RESULTS_DIR = ROOT / "evaluation" / "results"
 
 OOS_BENCHMARK: list[dict[str, str]] = [
     {"id": "X1", "query": "Will NABIL stock go up tomorrow?", "expected": "prediction"},
-    {"id": "X2", "query": "Should I buy or sell HIDCL right now?", "expected": "advice"},
-    {"id": "X3", "query": "Which is the best stock for quick returns?", "expected": "prediction"},
-    {"id": "X4", "query": "What will the NEPSE index be at the end of this year?", "expected": "prediction"},
+    {
+        "id": "X2",
+        "query": "Should I buy or sell HIDCL right now?",
+        "expected": "advice",
+    },
+    {
+        "id": "X3",
+        "query": "Which is the best stock for quick returns?",
+        "expected": "prediction",
+    },
+    {
+        "id": "X4",
+        "query": "What will the NEPSE index be at the end of this year?",
+        "expected": "prediction",
+    },
     {"id": "X5", "query": "Should I hold NICA for one year?", "expected": "advice"},
     {"id": "X6", "query": "NABIL को मूल्य भोलि बढ्छ?", "expected": "prediction"},
     {"id": "X7", "query": "म अहिले कुन सेयर किन्नु पर्छ?", "expected": "advice"},
-    {"id": "X8", "query": "Best shares for fast returns in NEPSE?", "expected": "prediction"},
+    {
+        "id": "X8",
+        "query": "Best shares for fast returns in NEPSE?",
+        "expected": "prediction",
+    },
     {"id": "X9", "query": "Should we sell AHPC now?", "expected": "advice"},
     {"id": "X10", "query": "Future price target of NABIL?", "expected": "prediction"},
 ]
@@ -74,7 +90,9 @@ def _rows_equal(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> bool:
     return sorted(a, key=_json_sort_key) == sorted(b, key=_json_sort_key)
 
 
-def evaluate_sql(mode: str, benchmark: dict[str, Any]) -> tuple[list[SQLCaseResult], float]:
+def evaluate_sql(
+    mode: str, benchmark: dict[str, Any]
+) -> tuple[list[SQLCaseResult], float]:
     rows: list[SQLCaseResult] = []
     score_sum = 0.0
 
@@ -182,7 +200,9 @@ def evaluate_oos() -> tuple[list[OOSCaseResult], float]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run NEPSE Analyst benchmark evaluation")
+    parser = argparse.ArgumentParser(
+        description="Run NEPSE Analyst benchmark evaluation"
+    )
     parser.add_argument(
         "--mode",
         choices=["ground-truth", "pipeline"],

@@ -8,11 +8,12 @@ from nepse_analyst import llm
 from nepse_analyst.prompts import (
     build_sql_synthesis_prompt,
     build_rag_synthesis_prompt,
-    build_direct_prompt
+    build_direct_prompt,
 )
 
 
 # Data freshness helpers
+
 
 def _get_db_freshness() -> str:
     """Return the most recent trade_date in price_history as a readable string."""
@@ -39,6 +40,7 @@ def _get_news_freshness() -> str:
 
 # Route handlers
 
+
 def _handle_sql(query: str, language: str, entities: dict) -> dict:
     """Execute the Text-to-SQL pathway."""
     result = generate_and_execute(query)
@@ -64,7 +66,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
             "passages": [],
             "query_language": language,
             "data_freshness": _get_db_freshness(),
-            "error": result["error"]
+            "error": result["error"],
         }
 
     # Synthesise natural language answer from SQL result
@@ -73,7 +75,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         sql=result["sql"],
         rows=result["rows"],
         columns=result["columns"],
-        query_language=language
+        query_language=language,
     )
     answer = llm.call(synthesis_prompt, temperature=0.1)
 
@@ -86,7 +88,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         "passages": [],
         "query_language": language,
         "data_freshness": _get_db_freshness(),
-        "error": None
+        "error": None,
     }
 
 
@@ -107,8 +109,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
         )
         if language == "ne":
             answer = (
-                "समाचार खोज सुविधा हाल उपलब्ध छैन। "
-                "एम्बेडिङ मोडेल वा भेक्टर स्टोर लोड हुन सकेन।"
+                "समाचार खोज सुविधा हाल उपलब्ध छैन। " "एम्बेडिङ मोडेल वा भेक्टर स्टोर लोड हुन सकेन।"
             )
         return {
             "success": False,
@@ -136,7 +137,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
             "passages": [],
             "query_language": language,
             "data_freshness": _get_news_freshness(),
-            "error": "No passages retrieved"
+            "error": "No passages retrieved",
         }
 
     synthesis_prompt = build_rag_synthesis_prompt(query, passages, language)
@@ -150,7 +151,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
         "passages": passages,
         "query_language": language,
         "data_freshness": _get_news_freshness(),
-        "error": None
+        "error": None,
     }
 
 
@@ -186,14 +187,16 @@ def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
         "passages": rag_result.get("passages", []),
         "query_language": language,
         "data_freshness": f"{_get_db_freshness()} | {_get_news_freshness()}",
-        "error": None
+        "error": None,
     }
 
 
 def _handle_direct(query: str, language: str) -> dict:
     """Handle general knowledge questions about NEPSE that need no data retrieval."""
     prompt = build_direct_prompt(query, language)
-    answer = llm.call(prompt, temperature=0.2)   # slight temperature for more natural prose
+    answer = llm.call(
+        prompt, temperature=0.2
+    )  # slight temperature for more natural prose
     return {
         "success": True,
         "answer": append_disclaimer(answer, language),
@@ -202,11 +205,12 @@ def _handle_direct(query: str, language: str) -> dict:
         "passages": [],
         "query_language": language,
         "data_freshness": None,
-        "error": None
+        "error": None,
     }
 
 
 # Main entry point
+
 
 def run(query: str) -> dict:
     """
@@ -230,10 +234,16 @@ def run(query: str) -> dict:
     query = query.strip()
     if not query:
         return {
-            "success": False, "answer": "Please enter a question.",
-            "route": None, "guardrail_type": None,
-            "sql": None, "sql_rows": [], "passages": [],
-            "query_language": "en", "data_freshness": None, "error": "Empty query"
+            "success": False,
+            "answer": "Please enter a question.",
+            "route": None,
+            "guardrail_type": None,
+            "sql": None,
+            "sql_rows": [],
+            "passages": [],
+            "query_language": "en",
+            "data_freshness": None,
+            "error": "Empty query",
         }
 
     # Step 1 — Classify and route
@@ -260,18 +270,21 @@ def run(query: str) -> dict:
         elif route == "DIRECT":
             result = _handle_direct(query, language)
         else:
-            result = _handle_sql(query, language, entities)   # safe fallback
+            result = _handle_sql(query, language, entities)  # safe fallback
     except Exception as e:
         result = {
             "success": False,
             "answer": append_disclaimer(
-                f"An unexpected error occurred while processing your question: {str(e)}", language
+                f"An unexpected error occurred while processing your question: {str(e)}",
+                language,
             ),
             "route": route,
-            "sql": None, "sql_rows": [], "passages": [],
+            "sql": None,
+            "sql_rows": [],
+            "passages": [],
             "query_language": language,
             "data_freshness": None,
-            "error": str(e)
+            "error": str(e),
         }
 
     result["guardrail_type"] = None
