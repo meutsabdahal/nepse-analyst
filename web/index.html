@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEPSE Analyst</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body>
+    <div class="ambient-glow" aria-hidden="true"></div>
+    <div class="app-shell">
+        <aside class="left-rail" id="leftRail">
+            <div class="brand-wrap">
+                <p class="brand-kicker">Nepal Equity Research</p>
+                <h1>NEPSE Analyst</h1>
+            </div>
+
+            <button id="newChatButton" class="new-chat-button" type="button">New chat</button>
+
+            <div class="thread-wrap">
+                <p class="thread-label">Recent chats</p>
+                <ul id="threadList" class="thread-list"></ul>
+            </div>
+
+            <div class="rail-footer">
+                <p>Research support only.</p>
+                <p>No buy/sell or prediction advice.</p>
+            </div>
+        </aside>
+
+        <main class="chat-stage">
+            <header class="chat-header">
+                <button id="railToggleButton" class="rail-toggle" type="button" aria-label="Toggle chat list">
+                    Chats
+                </button>
+                <div class="header-title-wrap">
+                    <p class="header-eyebrow">NEPSE Analyst</p>
+                    <h2>Talk with your market research assistant</h2>
+                </div>
+            </header>
+
+            <section id="messageFeed" class="message-feed" aria-live="polite"></section>
+
+            <div id="typingIndicator" class="typing-indicator hidden">
+                <span></span>
+                <span></span>
+                <span></span>
+                <p>Analyzing market data and recent disclosures...</p>
+            </div>
+
+            <section class="example-strip" id="exampleStrip"></section>
+
+            <form id="composerForm" class="composer" autocomplete="off">
+                <textarea id="composerInput" rows="1" maxlength="4000"
+                    placeholder="Message NEPSE Analyst..."></textarea>
+                <button id="sendButton" type="submit">Send</button>
+            </form>
+        </main>
+    </div>
+
+    <template id="messageTemplate">
+        <article class="message">
+            <p class="message-role"></p>
+            <div class="message-body"></div>
+            <div class="message-meta"></div>
+        </article>
+    </template>
+
+    <script src="/static/app.js" defer></script>
+</body>
+
+</html>

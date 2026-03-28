@@ -215,7 +215,7 @@ def _handle_direct(query: str, language: str) -> dict:
 def run(query: str) -> dict:
     """
     Process a natural language query end-to-end.
-    This is the single function the Streamlit UI calls.
+    This is the single function the chat API calls.
 
     Returns:
     {

@@ -12,41 +12,37 @@ Implemented:
 - Hybrid query flow: SQL, RAG, HYBRID, DIRECT, and OOS guardrail routing.
 - Multilingual handling for English and Nepali inputs.
 - Guardrails for prediction and advice queries with mandatory disclaimer injection.
-- Streamlit UI with:
-  - natural language input,
-  - example question sidebar,
-  - source transparency panel,
-  - data freshness indicator,
-  - company quick-facts card.
+- FastAPI chat backend with a Claude-style web interface.
+- Source transparency support in the chat UI (SQL preview, row preview, retrieved passages).
+- Company quick-facts panel when a symbol can be inferred.
 - Benchmark runner CLI for SQL and OOS reporting.
-- Hugging Face Spaces-ready app entrypoint and uv-based dependency workflow.
 
 ## Architecture
 
-User Query (EN/NE)
--> Router
+Browser Chat UI (HTML/CSS/JS)
+-> FastAPI (`app.py`)
+-> `nepse_analyst.pipeline.run`
 -> SQL / RAG / HYBRID / DIRECT / OOS
--> Answer synthesis
--> Streamlit response card + transparency panel
+-> Answer + metadata + source transparency
 
-Core package lives in nepse_analyst/ and UI lives in app/.
+Core package lives in `nepse_analyst/` and frontend assets live in `web/`.
 
 ## Repository Layout
 
-- app/main.py: Streamlit UI entrypoint.
-- app/components.py: Answer card, source panel, quick-facts rendering.
-- app/example_questions.py: Sidebar prompt list.
-- app.py: Root HF Spaces-compatible entrypoint.
-- nepse_analyst/pipeline.py: End-to-end query orchestration.
-- nepse_analyst/router.py: Query routing and entity extraction.
-- nepse_analyst/sql_generator.py: Text-to-SQL generation and execution.
-- nepse_analyst/retriever.py: ChromaDB retrieval.
-- nepse_analyst/guardrails.py: Advice/prediction rejection logic.
-- scripts/evaluate_benchmark.py: Benchmark runner.
-- scripts/build_db.py: Database schema build command.
-- scripts/refresh_news.py: News refresh command wrapper.
-- evaluation/benchmark_questions.json: SQL benchmark definitions.
-- evaluation/results/: Saved evaluation reports.
+- `app.py`: FastAPI server entrypoint and API routes.
+- `web/index.html`: Chat UI shell.
+- `web/styles.css`: Claude-style visual theme.
+- `web/app.js`: Chat client logic.
+- `nepse_analyst/pipeline.py`: End-to-end query orchestration.
+- `nepse_analyst/chat_helpers.py`: Symbol detection and quick-facts data helpers.
+- `nepse_analyst/example_questions.py`: Example prompts for UI.
+- `nepse_analyst/router.py`: Query routing and entity extraction.
+- `nepse_analyst/sql_generator.py`: Text-to-SQL generation and execution.
+- `nepse_analyst/retriever.py`: ChromaDB retrieval.
+- `nepse_analyst/guardrails.py`: Advice/prediction rejection logic.
+- `scripts/evaluate_benchmark.py`: Benchmark runner.
+- `scripts/build_db.py`: Database schema build command.
+- `scripts/refresh_news.py`: News refresh command wrapper.
 
 ## Quick Start
 
@@ -55,88 +51,71 @@ Prerequisites:
 - Local data artifacts prepared (SQLite DB and vector store)
 - Optional: Groq API key for cloud LLM mode
 
-1) Install dependencies (uv)
+1. Install dependencies
 
-- uv sync
+`uv sync`
 
-2) Configure environment
+2. Configure environment
 
-Copy .env.example to .env and set values:
-- LLM_PROVIDER=groq or ollama
-- GROQ_API_KEY=... (if using groq)
-- OLLAMA_MODEL=llama3.2:3b (if using ollama)
+Copy `.env.example` to `.env` and set values:
+- `LLM_PROVIDER=groq` or `LLM_PROVIDER=ollama`
+- `GROQ_API_KEY=...` (if using Groq)
+- `OLLAMA_MODEL=llama3.2:3b` (if using Ollama)
 
-3) Ensure data artifacts exist
+3. Ensure data artifacts exist
 
-- SQLite DB: data/processed/nepse.db
-- ChromaDB directory: data/vector_store/
+- SQLite DB: `data/processed/nepse.db`
+- ChromaDB directory: `data/vector_store/`
 
 If DB schema is missing:
-- python scripts/build_db.py
 
-For full data ingestion/index refresh use notebooks:
-- notebooks/ingest_companies.ipynb
-- notebooks/ingest_price_history.ipynb
-- notebooks/ingest_fundamentals.ipynb
-- notebooks/ingest_ipos.ipynb
-- notebooks/ingest_news.ipynb
+`uv run python scripts/build_db.py`
 
-4) Run the app
+For full ingestion/index refresh use notebooks:
+- `notebooks/ingest_companies.ipynb`
+- `notebooks/ingest_price_history.ipynb`
+- `notebooks/ingest_fundamentals.ipynb`
+- `notebooks/ingest_ipos.ipynb`
+- `notebooks/ingest_news.ipynb`
 
-- streamlit run app.py
+4. Run the app
+
+`uv run uvicorn app:app --reload`
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## API Endpoints
+
+- `GET /`: Chat web interface.
+- `GET /api/health`: Service health probe.
+- `GET /api/example-questions`: Example prompt list.
+- `POST /api/chat`: Query endpoint.
+
+Sample request:
+
+```json
+{
+  "message": "Which commercial bank has the highest EPS in the latest fiscal year?"
+}
+```
 
 ## Evaluation
 
 Run benchmark in ground-truth mode (validates benchmark SQL against DB):
-- python scripts/evaluate_benchmark.py --mode ground-truth
+
+`uv run python scripts/evaluate_benchmark.py --mode ground-truth`
 
 Run benchmark in pipeline mode (requires configured LLM):
-- python scripts/evaluate_benchmark.py --mode pipeline
 
-Reports are written to evaluation/results/ as JSON.
+`uv run python scripts/evaluate_benchmark.py --mode pipeline`
 
-Metrics currently reported by runner:
-- SQL accuracy (exact/partial scoring)
-- OOS rejection accuracy on 10 test queries
-
-Example output file:
-- evaluation/results/report_ground-truth_<timestamp>.json
+Reports are written to `evaluation/results/` as JSON.
 
 ## Tests
 
 Run regression tests:
-- python -m unittest discover -s tests -p "test_*.py"
 
-## Streamlit Features
-
-- Answer card with route and status.
-- Data freshness line for each response.
-- Expandable transparency panel showing SQL, SQL row preview, and retrieved passages.
-- Quick-facts panel for detected company symbol.
-- Clickable example prompts from sidebar.
-
-## Hugging Face Spaces Deployment
-
-This repository includes:
-- app.py (root entrypoint)
-- pyproject.toml
-- uv.lock
-- runtime.txt
-
-Suggested Space settings:
-- SDK: Streamlit
-- Python: 3.12
-- Hardware: CPU basic (free tier is acceptable)
-
-Deployment steps:
-1. Create a new Streamlit Space on Hugging Face.
-2. Push this repository to the Space.
-3. In build/startup command, install from lockfile: uv sync --frozen
-4. Add secrets/environment variables in Space settings:
-   - GROQ_API_KEY (if using Groq)
-   - LLM_PROVIDER
-5. Ensure data artifacts are present in the Space storage (or downloaded on startup).
-6. Launch and verify app loads, then run SQL/RAG/OOS sample queries.
+`uv run python -m unittest discover -s tests -p "test_*.py"`
 
 ## Known Data Constraints
 

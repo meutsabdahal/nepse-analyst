@@ -1,4 +1,4 @@
-"""Curated example questions shown in the Streamlit sidebar."""
+"""Curated prompts shown in the web chat interface."""
 
 EXAMPLE_QUESTIONS: list[str] = [
     "Which commercial bank has the highest EPS in the latest fiscal year?",
