@@ -122,3 +122,104 @@ RETRIEVED NEWS PASSAGES:
 {passage_text}
 
 ANSWER (based only on the passages above):"""
+
+
+def build_router_prompt(
+    query: str, query_language: str, detected_entities: dict
+) -> str:
+    """
+    Prompt for the LLM-based query router.
+    Returns one of five route labels as a single word.
+    detected_entities: dict with keys 'symbol', 'sector', 'metric', 'time_period'
+    """
+    entity_context = ""
+    if detected_entities.get("symbol"):
+        entity_context += f"Detected company symbol: {detected_entities['symbol']}\n"
+    if detected_entities.get("sector"):
+        entity_context += f"Detected sector: {detected_entities['sector']}\n"
+
+    return f"""You are a query router for NEPSE Analyst, a Nepal Stock Exchange research tool.
+Classify the user's question into exactly ONE of these five categories:
+
+SQL     — Questions about structured data: prices, EPS, P/E ratios, dividends, book value,
+          market cap, turnover, IPO data, index values, sector comparisons.
+          Examples: "highest EPS bank", "52-week high for NABIL", "dividend history of NHPC"
+
+RAG     — Questions about news, announcements, events, and qualitative information.
+          Examples: "recent news about NABIL", "AGM announcements", "regulatory changes"
+
+HYBRID  — Questions that need BOTH structured data AND news context to answer fully.
+          Examples: "How has NABIL performed recently?", "Compare banking sector fundamentals and news"
+
+DIRECT  — Questions answerable from general knowledge about NEPSE structure, how the market
+          works, or definitions — no data retrieval needed.
+          Examples: "What is NEPSE?", "How does the NEPSE trading session work?", "What is P/E ratio?"
+
+OOS     — Out of scope: price predictions, market forecasts, investment advice, buy/sell recommendations.
+          Examples: "Will NABIL go up?", "Should I buy HDCL?", "Best stock for quick returns"
+
+Query language: {query_language}
+{entity_context}
+User question: {query}
+
+Respond with ONLY one word — the category label: SQL, RAG, HYBRID, DIRECT, or OOS.
+No explanation. No punctuation. Just the label."""
+
+
+def build_sql_synthesis_prompt(
+    query: str, sql: str, rows: list[dict], columns: list[str], query_language: str
+) -> str:
+    """
+    Prompt for converting a raw SQL result into a natural language answer.
+    This is separate from the SQL generation prompt — it runs after execution.
+    """
+    # Format the result rows compactly
+    if not rows:
+        result_text = "The query returned no results."
+    elif len(rows) == 1:
+        result_text = str(dict(rows[0]))
+    else:
+        result_text = f"{len(rows)} rows:\n"
+        for i, row in enumerate(rows[:10], 1):  # cap at 10 rows for prompt length
+            result_text += f"  {i}. {dict(row)}\n"
+        if len(rows) > 10:
+            result_text += f"  ... and {len(rows) - 10} more rows."
+
+    language_instruction = (
+        "Respond in Nepali (Devanagari script)."
+        if query_language == "ne"
+        else "Respond in English."
+    )
+
+    return f"""You are a NEPSE research assistant. Convert this SQL query result into a clear,
+natural language answer for a non-technical investor.
+{language_instruction}
+Do NOT show the raw SQL or technical database terms.
+Do NOT make investment recommendations.
+Be concise — answer the question directly, then add one sentence of context if helpful.
+If the result is empty, say the data is not available and suggest the user check the data freshness.
+
+User question: {query}
+
+SQL used: {sql}
+
+Query result: {result_text}
+
+Natural language answer:"""
+
+
+def build_direct_prompt(query: str, query_language: str) -> str:
+    language_instruction = (
+        "Respond in Nepali (Devanagari script)."
+        if query_language == "ne"
+        else "Respond in English."
+    )
+    return f"""You are a NEPSE (Nepal Stock Exchange) research assistant with expert knowledge
+of how the Nepali stock market works. Answer the following factual question about NEPSE
+using your knowledge. Be accurate and concise.
+{language_instruction}
+Do not make investment recommendations or price predictions.
+
+Question: {query}
+
+Answer:"""
