@@ -6,6 +6,9 @@ from nepse_analyst.config import (
     GROQ_MODEL,
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
+    HF_API_KEY,
+    HF_LLM_MODEL,
+    HF_BASE_URL,
 )
 
 
@@ -19,12 +22,19 @@ def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
     if match:
         return match.group(1)
 
-    if LLM_PROVIDER == "groq":
+    provider = LLM_PROVIDER.strip().lower()
+
+    if provider == "groq":
         return _call_groq(prompt, system, temperature)
-    elif LLM_PROVIDER == "ollama":
+    elif provider == "ollama":
         return _call_ollama(prompt, system, temperature)
+    elif provider in {"hf", "huggingface"}:
+        return _call_hf(prompt, system, temperature)
     else:
-        raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+        raise ValueError(
+            f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. "
+            "Supported providers: groq, ollama, hf"
+        )
 
 
 def _call_groq(prompt: str, system: str, temperature: float) -> str:
@@ -75,3 +85,52 @@ def _call_ollama(prompt: str, system: str, temperature: float) -> str:
     )
     response.raise_for_status()
     return response.json()["response"].strip()
+
+
+def _call_hf(prompt: str, system: str, temperature: float) -> str:
+    import requests
+
+    if not HF_API_KEY:
+        raise ValueError(
+            "HF_API_KEY is not set. Add it to .env or switch LLM_PROVIDER to "
+            "'groq' or 'ollama'."
+        )
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": HF_LLM_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": 512,
+    }
+    headers = {
+        "Authorization": f"Bearer {HF_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    response = requests.post(HF_BASE_URL, json=payload, headers=headers, timeout=120)
+    response.raise_for_status()
+
+    data = response.json()
+
+    if isinstance(data, dict):
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message", {})
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+
+        generated_text = data.get("generated_text")
+        if isinstance(generated_text, str) and generated_text.strip():
+            return generated_text.strip()
+
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        generated_text = data[0].get("generated_text")
+        if isinstance(generated_text, str) and generated_text.strip():
+            return generated_text.strip()
+
+    raise ValueError("Unexpected response format from Hugging Face provider")

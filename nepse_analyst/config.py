@@ -20,6 +20,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+HF_API_KEY = os.getenv("HF_API_KEY", "")
+HF_LLM_MODEL = os.getenv("HF_LLM_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+HF_BASE_URL = os.getenv(
+    "HF_BASE_URL", "https://router.huggingface.co/v1/chat/completions"
+)
 
 # Embedding Settings
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
