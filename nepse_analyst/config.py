@@ -3,6 +3,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 # LLM Settings
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -11,7 +22,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Embedding Settings
-EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,10 +32,10 @@ NEWS_CACHE_DIR = os.path.join(BASE_DIR, "data", "raw", "news_cache")
 EVAL_DIR = os.path.join(BASE_DIR, "evaluation")
 
 # Retrieval Settings
-TOP_K_RAG = 5
-MAX_SQL_RETRIES = 3
-NEWS_COLLECTION = "nepse_news"
+TOP_K_RAG = _env_int("TOP_K_RAG", 5)
+MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
+NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 
 # Scraping Settings
-SCRAPE_DELAY_SEC = 3  # minimum seconds between requests
-MAX_ARTICLES = 5000  # cap on total news corpus size
+SCRAPE_DELAY_SEC = _env_int("SCRAPE_DELAY_SEC", 3)  # minimum seconds between requests
+MAX_ARTICLES = _env_int("MAX_ARTICLES", 5000)  # cap on total news corpus size
