@@ -79,6 +79,10 @@ For full ingestion/index refresh use notebooks:
 - `notebooks/ingest_ipos.ipynb`
 - `notebooks/ingest_news.ipynb`
 
+Notes for fundamentals coverage:
+- `notebooks/ingest_fundamentals.ipynb` now ingests broad equity coverage by default (excluding `Govt. Bonds`, `Mutual Fund`, and `Corp. Debentures`).
+- Use the `INCLUDE_ONLY_SECTORS` setting in that notebook when you want a faster targeted refresh.
+
 4. Run the app
 
 `uv run uvicorn app:app --reload`

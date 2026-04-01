@@ -16,6 +16,129 @@ from nepse_analyst.prompts import (
 # Data freshness helpers
 
 
+_LATEST_METRICS_SQL = """
+WITH latest_fundamentals AS (
+    SELECT
+        symbol,
+        fiscal_year,
+        eps,
+        pe_ratio,
+        book_value,
+        roe,
+        net_profit,
+        total_assets,
+        revenue
+    FROM fundamentals
+    WHERE symbol = ?
+    ORDER BY CAST(SUBSTR(fiscal_year, 1, 4) AS INT) DESC
+    LIMIT 1
+), latest_dividends AS (
+    SELECT
+        symbol,
+        fiscal_year,
+        cash_dividend,
+        bonus_shares
+    FROM dividends
+    WHERE symbol = ?
+    ORDER BY CAST(SUBSTR(fiscal_year, 1, 4) AS INT) DESC
+    LIMIT 1
+)
+SELECT
+    c.symbol,
+    c.name,
+    c.market_cap,
+    lf.fiscal_year,
+    lf.eps,
+    lf.pe_ratio,
+    lf.book_value,
+    lf.roe,
+    lf.net_profit,
+    lf.total_assets,
+    lf.revenue,
+    ld.fiscal_year AS dividend_fy,
+    ld.cash_dividend,
+    ld.bonus_shares
+FROM companies c
+LEFT JOIN latest_fundamentals lf ON lf.symbol = c.symbol
+LEFT JOIN latest_dividends ld ON ld.symbol = c.symbol
+WHERE c.symbol = ?
+LIMIT 1
+"""
+
+
+def _format_metric_value(value: object) -> str:
+    if isinstance(value, (int, float)):
+        return f"{value:,.2f}"
+    return str(value)
+
+
+def _build_symbol_metric_fallback(
+    language: str, entities: dict
+) -> dict | None:
+    """Return a deterministic metric answer for single-symbol SQL questions."""
+    symbol = entities.get("symbol")
+    metric = entities.get("metric")
+    if not symbol or not metric:
+        return None
+
+    metric_map = {
+        "eps": ("eps", "EPS", "fiscal_year"),
+        "pe_ratio": ("pe_ratio", "P/E ratio", "fiscal_year"),
+        "book_value": ("book_value", "book value", "fiscal_year"),
+        "roe": ("roe", "ROE", "fiscal_year"),
+        "net_profit": ("net_profit", "net profit", "fiscal_year"),
+        "total_assets": ("total_assets", "total assets", "fiscal_year"),
+        "revenue": ("revenue", "revenue", "fiscal_year"),
+        "dividend": ("cash_dividend", "cash dividend", "dividend_fy"),
+        "bonus_shares": ("bonus_shares", "bonus shares", "dividend_fy"),
+        "market_cap": ("market_cap", "market capitalisation", None),
+    }
+    metric_spec = metric_map.get(metric)
+    if not metric_spec:
+        return None
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(_LATEST_METRICS_SQL, (symbol, symbol, symbol))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return None
+
+    row_dict = dict(row)
+    field, label, fy_field = metric_spec
+    value = row_dict.get(field)
+    if value is None:
+        return None
+
+    company_name = row_dict.get("name") or symbol
+    value_text = _format_metric_value(value)
+    fy = row_dict.get(fy_field) if fy_field else None
+
+    if language == "ne":
+        if fy:
+            answer = f"{company_name} ({symbol}) को पछिल्लो {label} FY {fy} मा {value_text} छ।"
+        else:
+            answer = f"{company_name} ({symbol}) को {label} {value_text} छ।"
+    else:
+        if fy:
+            answer = (
+                f"The latest {label} for {company_name} ({symbol}) is "
+                f"{value_text} in FY {fy}."
+            )
+        else:
+            answer = f"The {label} for {company_name} ({symbol}) is {value_text}."
+
+    return {
+        "answer": answer,
+        "sql": _LATEST_METRICS_SQL.strip(),
+        "sql_rows": [row_dict],
+    }
+
+
 def _get_db_freshness() -> str:
     """Return the most recent trade_date in price_history as a readable string."""
     try:
@@ -76,6 +199,20 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
     result = generate_and_execute(query)
 
     if not result["success"]:
+        fallback = _build_symbol_metric_fallback(language, entities)
+        if fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(fallback["answer"], language),
+                "route": "SQL",
+                "sql": fallback.get("sql"),
+                "sql_rows": fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
         answer = (
             "I was unable to retrieve structured data for this question. "
             f"The database returned an error after {result['attempts']} attempts: "
@@ -93,11 +230,27 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
             "answer": append_disclaimer(answer, language),
             "route": "SQL",
             "sql": result.get("sql"),
+            "sql_rows": [],
             "passages": [],
             "query_language": language,
             "data_freshness": _get_db_freshness(),
             "error": result["error"],
         }
+
+    if not result["rows"]:
+        fallback = _build_symbol_metric_fallback(language, entities)
+        if fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(fallback["answer"], language),
+                "route": "SQL",
+                "sql": fallback.get("sql"),
+                "sql_rows": fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
 
     # Synthesise natural language answer from SQL result
     synthesis_prompt = build_sql_synthesis_prompt(
