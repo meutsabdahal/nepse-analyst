@@ -128,6 +128,128 @@ class PipelineContractTests(unittest.TestCase):
             pipeline.generate_and_execute = orig_generate
             pipeline._build_symbol_metric_fallback = orig_fallback
 
+    def test_sql_empty_rows_uses_dividend_consistency_fallback(self) -> None:
+        orig_classify = pipeline.classify
+        orig_generate = pipeline.generate_and_execute
+        orig_dividend_fallback = pipeline._build_dividend_consistency_fallback
+        orig_llm_call = pipeline.llm.call
+        try:
+            pipeline.classify = lambda q: {
+                "route": "SQL",
+                "guardrail": None,
+                "language": "en",
+                "entities": {"sector": "Hydropower", "metric": "dividend"},
+                "confidence": "high",
+            }
+            pipeline.generate_and_execute = lambda q: {
+                "success": True,
+                "question": q,
+                "sql": "SELECT ...",
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "attempts": 1,
+                "error": None,
+            }
+            pipeline._build_dividend_consistency_fallback = lambda q, language, entities: {
+                "answer": "In Hydropower, these stocks have paid dividends consistently for the last 5 years: CHCL.",
+                "sql": "SELECT streak",
+                "sql_rows": [{"symbol": "CHCL", "years_paid": 5}],
+            }
+            pipeline.llm.call = lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("LLM synthesis should not run when fallback is used")
+            )
+
+            out = pipeline.run(
+                "which hydropower stock has been consistently providing dividend for last 5 years?"
+            )
+            self.assertTrue(out.get("success"))
+            self.assertIn("consistently", out.get("answer", ""))
+            self.assertTrue(out.get("sql_rows"))
+        finally:
+            pipeline.classify = orig_classify
+            pipeline.generate_and_execute = orig_generate
+            pipeline._build_dividend_consistency_fallback = orig_dividend_fallback
+            pipeline.llm.call = orig_llm_call
+
+    def test_sql_error_uses_dividend_consistency_fallback(self) -> None:
+        orig_classify = pipeline.classify
+        orig_generate = pipeline.generate_and_execute
+        orig_dividend_fallback = pipeline._build_dividend_consistency_fallback
+        try:
+            pipeline.classify = lambda q: {
+                "route": "SQL",
+                "guardrail": None,
+                "language": "en",
+                "entities": {"sector": "Hydropower", "metric": "dividend"},
+                "confidence": "high",
+            }
+            pipeline.generate_and_execute = lambda q: {
+                "success": False,
+                "question": q,
+                "sql": "SELECT broken",
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "attempts": 3,
+                "error": "SQL error",
+            }
+            pipeline._build_dividend_consistency_fallback = lambda q, language, entities: {
+                "answer": "In Hydropower, these stocks have paid dividends consistently for the last 5 years: CHCL.",
+                "sql": "SELECT streak",
+                "sql_rows": [{"symbol": "CHCL", "years_paid": 5}],
+            }
+
+            out = pipeline.run(
+                "which hydropower stock has been consistently providing dividend for last 5 years?"
+            )
+            self.assertTrue(out.get("success"))
+            self.assertIsNone(out.get("error"))
+            self.assertIn("Hydropower", out.get("answer", ""))
+        finally:
+            pipeline.classify = orig_classify
+            pipeline.generate_and_execute = orig_generate
+            pipeline._build_dividend_consistency_fallback = orig_dividend_fallback
+
+    def test_dividend_sector_coverage_query_uses_deterministic_fallback(self) -> None:
+        orig_classify = pipeline.classify
+        orig_generate = pipeline.generate_and_execute
+        orig_coverage_fallback = pipeline._build_dividend_sector_coverage_fallback
+        try:
+            pipeline.classify = lambda q: {
+                "route": "SQL",
+                "guardrail": None,
+                "language": "en",
+                "entities": {"metric": "dividend"},
+                "confidence": "high",
+            }
+            pipeline.generate_and_execute = lambda q: (_ for _ in ()).throw(
+                AssertionError(
+                    "SQL generation should not run for sector coverage fallback queries"
+                )
+            )
+            pipeline._build_dividend_sector_coverage_fallback = lambda q, language: {
+                "answer": "Dividend data is not available for every sector.",
+                "sql": "SELECT coverage",
+                "sql_rows": [
+                    {
+                        "sector": "Hydropower",
+                        "total_symbols": 10,
+                        "symbols_with_dividend_rows": 5,
+                    }
+                ],
+            }
+
+            out = pipeline.run("dividend data is not available for every sectors")
+            self.assertTrue(out.get("success"))
+            self.assertEqual(out.get("route"), "SQL")
+            self.assertIn("every sector", out.get("answer", ""))
+            self.assertTrue(out.get("sql_rows"))
+        finally:
+            pipeline.classify = orig_classify
+            pipeline.generate_and_execute = orig_generate
+            pipeline._build_dividend_sector_coverage_fallback = orig_coverage_fallback
+
 
 if __name__ == "__main__":
     unittest.main()

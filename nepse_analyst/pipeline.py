@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from nepse_analyst.router import classify
 from nepse_analyst.guardrails import build_decline_response, append_disclaimer
 from nepse_analyst.sql_generator import generate_and_execute
@@ -66,10 +67,220 @@ LIMIT 1
 """
 
 
+_DIVIDEND_STREAK_SQL = """
+WITH paid AS (
+    SELECT
+        d.symbol,
+        d.fiscal_year,
+        CAST(SUBSTR(d.fiscal_year, 1, 4) AS INT) AS fy_start
+    FROM dividends d
+    JOIN companies c ON c.symbol = d.symbol
+    WHERE (? IS NULL OR c.sector = ?)
+      AND (
+          COALESCE(d.cash_dividend, 0) > 0
+          OR COALESCE(d.bonus_shares, 0) > 0
+      )
+), latest AS (
+    SELECT symbol, MAX(fy_start) AS latest_fy_start
+    FROM paid
+    GROUP BY symbol
+), windowed AS (
+    SELECT
+        p.symbol,
+        p.fiscal_year,
+        p.fy_start,
+        l.latest_fy_start
+    FROM paid p
+    JOIN latest l ON l.symbol = p.symbol
+    WHERE p.fy_start BETWEEN (l.latest_fy_start - ? + 1) AND l.latest_fy_start
+), agg AS (
+    SELECT
+        symbol,
+        MIN(fiscal_year) AS from_fy,
+        MAX(fiscal_year) AS to_fy,
+        COUNT(DISTINCT fy_start) AS years_paid
+    FROM windowed
+    GROUP BY symbol
+)
+SELECT
+    c.symbol,
+    c.name,
+    c.sector,
+    a.from_fy,
+    a.to_fy,
+    a.years_paid
+FROM agg a
+JOIN companies c ON c.symbol = a.symbol
+WHERE a.years_paid = ?
+ORDER BY a.to_fy DESC, c.symbol
+LIMIT 20
+"""
+
+
+_DIVIDEND_SECTOR_COVERAGE_SQL = """
+SELECT
+    c.sector,
+    COUNT(DISTINCT c.symbol) AS total_symbols,
+    COUNT(DISTINCT d.symbol) AS symbols_with_dividend_rows
+FROM companies c
+LEFT JOIN dividends d ON d.symbol = c.symbol
+WHERE c.is_active = 1
+GROUP BY c.sector
+ORDER BY c.sector
+"""
+
+
 def _format_metric_value(value: object) -> str:
     if isinstance(value, (int, float)):
         return f"{value:,.2f}"
     return str(value)
+
+
+def _extract_last_n_years(query: str) -> int | None:
+    """Extract a year window from queries like 'last 5 years'."""
+    q = query.lower()
+    match = re.search(r"(?:last|past)\s+(\d+)\s+years?", q)
+    if match:
+        return int(match.group(1))
+
+    match = re.search(r"(\d+)\s+(?:consecutive\s+)?years?", q)
+    if match:
+        return int(match.group(1))
+
+    return None
+
+
+def _build_dividend_consistency_fallback(
+    query: str, language: str, entities: dict
+) -> dict | None:
+    """Return deterministic answer for 'consistent dividend for last N years' queries."""
+    q = query.lower()
+    if entities.get("metric") != "dividend" and "dividend" not in q:
+        return None
+    if not any(token in q for token in ["consistent", "consistently", "consecutive"]):
+        return None
+
+    years = _extract_last_n_years(query)
+    if years is None or years < 2:
+        return None
+
+    sector = entities.get("sector")
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(_DIVIDEND_STREAK_SQL, (sector, sector, years, years))
+        rows = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    if not rows:
+        return None
+
+    symbols = ", ".join(row["symbol"] for row in rows[:10])
+    if len(rows) > 10:
+        symbols += f", and {len(rows) - 10} more"
+
+    sector_text = sector or "the market"
+    if language == "ne":
+        answer = (
+            f"{sector_text} मा पछिल्ला {years} वर्ष लगातार लाभांश दिने कम्पनीहरू भेटिए: "
+            f"{symbols}।"
+        )
+    else:
+        answer = (
+            f"In {sector_text}, these stocks have paid dividends consistently for the last "
+            f"{years} years: {symbols}."
+        )
+
+    return {
+        "answer": answer,
+        "sql": _DIVIDEND_STREAK_SQL.strip(),
+        "sql_rows": rows,
+    }
+
+
+def _build_dividend_sector_coverage_fallback(query: str, language: str) -> dict | None:
+    """Return deterministic coverage summary for sector-wide dividend data queries."""
+    q = query.lower()
+    if "dividend" not in q:
+        return None
+    if "sector" not in q and "sectors" not in q:
+        return None
+    coverage_tokens = ["every", "all", "each", "available", "coverage", "not available"]
+    if not any(token in q for token in coverage_tokens):
+        return None
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        rows = [
+            dict(row)
+            for row in cursor.execute(_DIVIDEND_SECTOR_COVERAGE_SQL).fetchall()
+        ]
+    finally:
+        conn.close()
+
+    if not rows:
+        return None
+
+    partial = [
+        r for r in rows if 0 < r["symbols_with_dividend_rows"] < r["total_symbols"]
+    ]
+    none = [r for r in rows if r["symbols_with_dividend_rows"] == 0]
+    full = [
+        r
+        for r in rows
+        if r["total_symbols"] > 0
+        and r["symbols_with_dividend_rows"] == r["total_symbols"]
+    ]
+
+    total_symbols = sum(r["total_symbols"] for r in rows)
+    covered_symbols = sum(r["symbols_with_dividend_rows"] for r in rows)
+    coverage_pct = (covered_symbols * 100.0 / total_symbols) if total_symbols else 0.0
+
+    if language == "ne":
+        answer = (
+            "हालको डेटासेटमा सबै sector मा dividend data उपलब्ध छैन। "
+            f"कुल coverage: {covered_symbols}/{total_symbols} symbols "
+            f"({coverage_pct:.1f}%)।"
+        )
+    else:
+        answer = (
+            "Dividend data is not available for every sector in the current dataset. "
+            f"Overall coverage is {covered_symbols}/{total_symbols} symbols "
+            f"({coverage_pct:.1f}%)."
+        )
+
+    if full:
+        full_sectors = ", ".join(r["sector"] for r in full[:6])
+        if language == "ne":
+            answer += f" Full coverage भएका sector हरू: {full_sectors}."
+        else:
+            answer += f" Sectors with full coverage include: {full_sectors}."
+
+    if partial:
+        partial_preview = ", ".join(
+            f"{r['sector']} ({r['symbols_with_dividend_rows']}/{r['total_symbols']})"
+            for r in partial[:6]
+        )
+        if language == "ne":
+            answer += f" Partial coverage उदाहरण: {partial_preview}."
+        else:
+            answer += f" Partial coverage examples: {partial_preview}."
+
+    if none:
+        none_sectors = ", ".join(r["sector"] for r in none[:6])
+        if language == "ne":
+            answer += f" कुनै dividend data नभएका sector: {none_sectors}."
+        else:
+            answer += f" Sectors with no dividend rows: {none_sectors}."
+
+    return {
+        "answer": answer,
+        "sql": _DIVIDEND_SECTOR_COVERAGE_SQL.strip(),
+        "sql_rows": rows,
+    }
 
 
 def _build_symbol_metric_fallback(language: str, entities: dict) -> dict | None:
@@ -194,9 +405,39 @@ def _get_news_staleness_warning(language: str) -> str | None:
 
 def _handle_sql(query: str, language: str, entities: dict) -> dict:
     """Execute the Text-to-SQL pathway."""
+    coverage_fallback = _build_dividend_sector_coverage_fallback(query, language)
+    if coverage_fallback:
+        return {
+            "success": True,
+            "answer": append_disclaimer(coverage_fallback["answer"], language),
+            "route": "SQL",
+            "sql": coverage_fallback.get("sql"),
+            "sql_rows": coverage_fallback.get("sql_rows", []),
+            "passages": [],
+            "query_language": language,
+            "data_freshness": _get_db_freshness(),
+            "error": None,
+        }
+
     result = generate_and_execute(query)
 
     if not result["success"]:
+        dividend_fallback = _build_dividend_consistency_fallback(
+            query, language, entities
+        )
+        if dividend_fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(dividend_fallback["answer"], language),
+                "route": "SQL",
+                "sql": dividend_fallback.get("sql"),
+                "sql_rows": dividend_fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
         fallback = _build_symbol_metric_fallback(language, entities)
         if fallback:
             return {
@@ -236,6 +477,22 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         }
 
     if not result["rows"]:
+        dividend_fallback = _build_dividend_consistency_fallback(
+            query, language, entities
+        )
+        if dividend_fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(dividend_fallback["answer"], language),
+                "route": "SQL",
+                "sql": dividend_fallback.get("sql"),
+                "sql_rows": dividend_fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
         fallback = _build_symbol_metric_fallback(language, entities)
         if fallback:
             return {
