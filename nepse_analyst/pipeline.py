@@ -5,6 +5,7 @@ from nepse_analyst.sql_generator import generate_and_execute
 from nepse_analyst.retriever import search, get_corpus_stats
 from nepse_analyst.database import get_connection
 from nepse_analyst import llm
+from nepse_analyst.config import TOP_K_RAG, NEWS_STALE_DAYS
 from nepse_analyst.prompts import (
     build_sql_synthesis_prompt,
     build_rag_synthesis_prompt,
@@ -36,6 +37,33 @@ def _get_news_freshness() -> str:
         return f"News data last updated: {stats['latest_date']} ({stats['total_documents']} articles)"
     except Exception:
         return "News data freshness unknown"
+
+
+def _get_news_staleness_warning(language: str) -> str | None:
+    """Return a warning when the news corpus is older than the configured threshold."""
+    try:
+        stats = get_corpus_stats()
+        latest = stats.get("latest_date")
+        total = stats.get("total_documents")
+        if not latest or latest == "unknown":
+            return None
+
+        age_days = (datetime.utcnow().date() - datetime.strptime(latest, "%Y-%m-%d").date()).days
+        if age_days <= NEWS_STALE_DAYS:
+            return None
+
+        if language == "ne":
+            return (
+                "समाचार कोष पुरानो हुन सक्छ। "
+                f"अन्तिम अपडेट: {latest} ({total} लेख), लगभग {age_days} दिन अगाडि।"
+            )
+
+        return (
+            "The news corpus appears stale. "
+            f"Last update: {latest} ({total} articles), about {age_days} days ago."
+        )
+    except Exception:
+        return None
 
 
 # Route handlers
@@ -98,7 +126,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
     try:
         passages = search(
             query=query,
-            top_k=5,
+            top_k=TOP_K_RAG,
             symbol_filter=entities.get("symbol") or None,
             sector_filter=entities.get("sector") or None,
         )
@@ -142,6 +170,9 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
 
     synthesis_prompt = build_rag_synthesis_prompt(query, passages, language)
     answer = llm.call(synthesis_prompt, temperature=0.1)
+    stale_warning = _get_news_staleness_warning(language)
+    if stale_warning:
+        answer = f"{stale_warning}\n\n{answer}"
 
     return {
         "success": True,

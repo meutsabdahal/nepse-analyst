@@ -156,6 +156,25 @@ function titleCase(role) {
     return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+function stripTrailingDisclaimer(text) {
+    if (!text) {
+        return "";
+    }
+    return String(text)
+        .replace(/\n{1,2}---\s*\n\s*⚠️[\s\S]*$/u, "")
+        .trim();
+}
+
+function extractPriceFreshness(dataFreshness) {
+    if (!dataFreshness || typeof dataFreshness !== "string") {
+        return "";
+    }
+
+    const segments = dataFreshness.split("|").map((s) => s.trim());
+    const priceSegment = segments.find((s) => s.startsWith("Price data last updated:"));
+    return priceSegment || "";
+}
+
 function appendMessage(role, content, meta = null) {
     let thread = getActiveThread();
     if (!thread) {
@@ -254,28 +273,18 @@ function renderSourceMeta(container, meta) {
         return;
     }
 
-    const row = document.createElement("div");
-    row.className = "meta-row";
+    const priceFreshness = extractPriceFreshness(meta.data_freshness);
+    if (priceFreshness) {
+        const row = document.createElement("div");
+        row.className = "meta-row";
 
-    const chips = [
-        `Route: ${meta.route || "N/A"}`,
-        `Status: ${meta.success ? "Success" : "Partial"}`,
-        `Language: ${meta.query_language || "N/A"}`,
-    ];
-    if (meta.data_freshness) {
-        chips.push(meta.data_freshness);
-    }
-    if (meta.guardrail_type) {
-        chips.push(`Guardrail: ${meta.guardrail_type}`);
-    }
-
-    for (const text of chips) {
         const chip = document.createElement("span");
         chip.className = "chip";
-        chip.textContent = text;
+        chip.textContent = priceFreshness;
         row.append(chip);
+
+        container.append(row);
     }
-    container.append(row);
 
     if (meta.quick_facts && meta.quick_facts.symbol) {
         const factsWrap = document.createElement("section");
@@ -433,7 +442,10 @@ function renderMessages() {
         const meta = clone.querySelector(".message-meta");
 
         role.textContent = titleCase(message.role);
-        body.textContent = message.content;
+        body.textContent =
+            message.role === "assistant"
+                ? stripTrailingDisclaimer(message.content)
+                : message.content;
 
         if (message.role === "assistant") {
             renderSourceMeta(meta, message.meta);
@@ -515,16 +527,21 @@ async function sendMessage(message) {
         }
 
         const payload = await response.json();
-        appendMessageToThread(requestThreadId, "assistant", payload.answer || "No response.", {
-            success: payload.success,
-            route: payload.route,
-            guardrail_type: payload.guardrail_type,
-            query_language: payload.query_language,
-            data_freshness: payload.data_freshness,
-            quick_facts: payload.quick_facts,
-            sources: payload.sources,
-            error: payload.error,
-        });
+        appendMessageToThread(
+            requestThreadId,
+            "assistant",
+            stripTrailingDisclaimer(payload.answer || "No response."),
+            {
+                success: payload.success,
+                route: payload.route,
+                guardrail_type: payload.guardrail_type,
+                query_language: payload.query_language,
+                data_freshness: payload.data_freshness,
+                quick_facts: payload.quick_facts,
+                sources: payload.sources,
+                error: payload.error,
+            }
+        );
     } catch (error) {
         const isAborted = error instanceof DOMException && error.name === "AbortError";
         if (isAborted) {

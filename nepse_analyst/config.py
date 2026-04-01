@@ -38,6 +38,7 @@ EVAL_DIR = os.path.join(BASE_DIR, "evaluation")
 
 # Retrieval Settings
 TOP_K_RAG = _env_int("TOP_K_RAG", 5)
+NEWS_STALE_DAYS = _env_int("NEWS_STALE_DAYS", 30)
 MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 
