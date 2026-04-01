@@ -48,7 +48,9 @@ def _get_news_staleness_warning(language: str) -> str | None:
         if not latest or latest == "unknown":
             return None
 
-        age_days = (datetime.utcnow().date() - datetime.strptime(latest, "%Y-%m-%d").date()).days
+        age_days = (
+            datetime.utcnow().date() - datetime.strptime(latest, "%Y-%m-%d").date()
+        ).days
         if age_days <= NEWS_STALE_DAYS:
             return None
 
