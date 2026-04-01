@@ -69,7 +69,9 @@ class PipelineContractTests(unittest.TestCase):
             pipeline._build_symbol_metric_fallback = lambda language, entities: {
                 "answer": "The latest EPS for UPPER is 11.00 in FY 2082/83.",
                 "sql": "SELECT fallback",
-                "sql_rows": [{"symbol": "UPPER", "eps": 11.0, "fiscal_year": "2082/83"}],
+                "sql_rows": [
+                    {"symbol": "UPPER", "eps": 11.0, "fiscal_year": "2082/83"}
+                ],
             }
             pipeline.llm.call = lambda *a, **k: (_ for _ in ()).throw(
                 AssertionError("LLM synthesis should not run when fallback is used")
@@ -111,7 +113,9 @@ class PipelineContractTests(unittest.TestCase):
             pipeline._build_symbol_metric_fallback = lambda language, entities: {
                 "answer": "The latest EPS for UPPER is 11.00 in FY 2082/83.",
                 "sql": "SELECT fallback",
-                "sql_rows": [{"symbol": "UPPER", "eps": 11.0, "fiscal_year": "2082/83"}],
+                "sql_rows": [
+                    {"symbol": "UPPER", "eps": 11.0, "fiscal_year": "2082/83"}
+                ],
             }
 
             out = pipeline.run("eps of UPPER")

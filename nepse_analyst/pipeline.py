@@ -72,9 +72,7 @@ def _format_metric_value(value: object) -> str:
     return str(value)
 
 
-def _build_symbol_metric_fallback(
-    language: str, entities: dict
-) -> dict | None:
+def _build_symbol_metric_fallback(language: str, entities: dict) -> dict | None:
     """Return a deterministic metric answer for single-symbol SQL questions."""
     symbol = entities.get("symbol")
     metric = entities.get("metric")
