@@ -112,7 +112,22 @@ def _call_hf(prompt: str, system: str, temperature: float) -> str:
         "Content-Type": "application/json",
     }
     response = requests.post(HF_BASE_URL, json=payload, headers=headers, timeout=120)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = response.text.strip()
+        if response.status_code == 400 and "model_not_found" in detail:
+            raise ValueError(
+                "Hugging Face model not found for HF_LLM_MODEL="
+                f"'{HF_LLM_MODEL}'. Use a valid router model ID such as "
+                "'meta-llama/Llama-3.1-8B-Instruct'. "
+                f"Provider detail: {detail}"
+            ) from exc
+
+        raise ValueError(
+            "Hugging Face request failed with HTTP "
+            f"{response.status_code}. Provider detail: {detail}"
+        ) from exc
 
     data = response.json()
 
