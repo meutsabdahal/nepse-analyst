@@ -21,7 +21,8 @@
 html,
 body {
     margin: 0;
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
 }
 
 body {
@@ -43,17 +44,20 @@ body {
     z-index: 1;
     display: grid;
     grid-template-columns: 272px minmax(0, 1fr);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .left-rail {
     background: var(--sidebar-bg);
     color: #efe6d8;
     border-right: 1px solid var(--sidebar-border);
+    height: 100vh;
     padding: 0.9rem 0.8rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
+    overflow: hidden;
 }
 
 .brand-wrap {
@@ -117,9 +121,17 @@ body {
 }
 
 .thread-wrap {
+    flex: 1;
     overflow: auto;
     min-height: 0;
     padding-right: 0.2rem;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.thread-wrap::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
 
 .thread-head {
@@ -240,7 +252,7 @@ body {
 
 .rail-footer {
     color: #8d8576;
-    font-size: 0.7rem;
+    font-size: 0.6rem;
 }
 
 .left-rail .rail-footer {
@@ -250,9 +262,6 @@ body {
 }
 
 .chat-stage .rail-footer {
-    margin-top: 0.14rem;
-    padding-top: 0.56rem;
-    border-top: 1px solid var(--line);
     text-align: center;
     color: #9b9183;
 }
@@ -267,13 +276,15 @@ body {
 
 .chat-stage {
     min-width: 0;
-    max-width: 900px;
+    max-width: 1080px;
     margin: 0 auto;
-    width: min(900px, calc(100vw - 2.2rem));
+    width: min(1080px, calc(100vw - 2.2rem));
+    height: 100vh;
     padding: 0.8rem 0 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
+    overflow: hidden;
 }
 
 .chat-header {
@@ -318,10 +329,18 @@ body {
     flex: 1;
     min-height: 300px;
     overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     display: flex;
     flex-direction: column;
     gap: 0.58rem;
     padding: 0.2rem 0.1rem;
+}
+
+.message-feed::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
 
 .message {
@@ -520,6 +539,10 @@ body {
     padding-top: 0.18rem;
 }
 
+.example-strip.hidden {
+    display: none;
+}
+
 .example-chip {
     border: 1px solid #4a4339;
     border-radius: 999px;
@@ -535,8 +558,7 @@ body {
 }
 
 .composer {
-    position: sticky;
-    bottom: 0;
+    position: relative;
     border: 1px solid #4a4238;
     border-radius: 20px;
     background: #24211d;
@@ -544,7 +566,7 @@ body {
     align-items: flex-end;
     gap: 0.5rem;
     padding: 0.5rem;
-    box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.02), var(--shadow);
+    box-shadow: none;
 }
 
 .composer-actions {
@@ -665,7 +687,7 @@ body {
     }
 
     .chat-stage {
-        width: min(900px, calc(100vw - 1.1rem));
+        width: min(1080px, calc(100vw - 1.1rem));
     }
 
     .message.user {

@@ -471,6 +471,12 @@ function renderExamples(examples) {
     }
 }
 
+function updateExampleStripVisibility() {
+    const thread = getActiveThread();
+    const shouldShow = !thread || thread.messages.length === 0;
+    el.exampleStrip.classList.toggle("hidden", !shouldShow);
+}
+
 function toggleLoading(value) {
     state.loading = value;
     el.newChatButton.disabled = value;
@@ -575,6 +581,7 @@ async function sendMessage(message) {
 function render() {
     renderThreadList();
     renderMessages();
+    updateExampleStripVisibility();
 }
 
 async function hydrateExamples() {
