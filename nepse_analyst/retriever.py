@@ -20,6 +20,33 @@ def _get_collection():
     return _collection
 
 
+def _build_where_clause(
+    symbol_filter: str | None,
+    sector_filter: str | None,
+    language_filter: str | None,
+    article_type_filter: str | None,
+) -> dict | None:
+    """Build a ChromaDB-compatible where clause.
+
+    Chroma expects a single top-level operator when composing multiple predicates.
+    """
+    clauses = []
+    if symbol_filter:
+        clauses.append({"symbol": {"$eq": symbol_filter}})
+    if sector_filter:
+        clauses.append({"sector": {"$eq": sector_filter}})
+    if language_filter:
+        clauses.append({"language": {"$eq": language_filter}})
+    if article_type_filter:
+        clauses.append({"article_type": {"$eq": article_type_filter}})
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
 def search(
     query: str,
     top_k: int = TOP_K_RAG,
@@ -31,23 +58,19 @@ def search(
     collection = _get_collection()
     query_embedding = encode_query(query).tolist()
 
-    # Build ChromaDB metadata filter (where clause)
-    where = {}
-    if symbol_filter:
-        where["symbol"] = symbol_filter
-    if sector_filter:
-        where["sector"] = sector_filter
-    if language_filter:
-        where["language"] = language_filter
-    if article_type_filter:
-        where["article_type"] = article_type_filter
+    where = _build_where_clause(
+        symbol_filter=symbol_filter,
+        sector_filter=sector_filter,
+        language_filter=language_filter,
+        article_type_filter=article_type_filter,
+    )
 
     query_kwargs = {
         "query_embeddings": [query_embedding],
         "n_results": top_k,
         "include": ["documents", "metadatas", "distances"],
     }
-    if where:
+    if where is not None:
         query_kwargs["where"] = where
 
     results = collection.query(**query_kwargs)

@@ -217,5 +217,5 @@ __pycache__/
 # Generated benchmark outputs
 evaluation/results/*.json
 
-
+.vscode/
 nepse_analyst_prd.html

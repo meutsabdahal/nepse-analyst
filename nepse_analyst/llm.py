@@ -1,4 +1,5 @@
 import re
+import time
 
 from nepse_analyst.config import (
     LLM_PROVIDER,
@@ -29,12 +30,45 @@ def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
     elif provider == "ollama":
         return _call_ollama(prompt, system, temperature)
     elif provider in {"hf", "huggingface"}:
-        return _call_hf(prompt, system, temperature)
+        return _call_hf_with_fallback(prompt, system, temperature)
     else:
         raise ValueError(
             f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. "
             "Supported providers: groq, ollama, hf"
         )
+
+
+def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
+    """Call Hugging Face first, with automatic fallback on quota exhaustion."""
+    try:
+        return _call_hf(prompt, system, temperature)
+    except Exception as exc:
+        msg = str(exc)
+        is_quota_error = (
+            "HTTP 402" in msg or "depleted your monthly included credits" in msg.lower()
+        )
+        if not is_quota_error:
+            raise
+
+        fallback_errors = []
+
+        # Prefer Groq when available because it's remote and requires no local model.
+        if GROQ_API_KEY:
+            try:
+                return _call_groq(prompt, system, temperature)
+            except Exception as groq_exc:
+                fallback_errors.append(f"groq failed: {groq_exc}")
+
+        # Final fallback: local Ollama if running.
+        try:
+            return _call_ollama(prompt, system, temperature)
+        except Exception as ollama_exc:
+            fallback_errors.append(f"ollama failed: {ollama_exc}")
+
+        details = (
+            "; ".join(fallback_errors) if fallback_errors else "no fallbacks attempted"
+        )
+        raise ValueError(f"{msg} | Automatic fallback failed ({details}).") from exc
 
 
 def _call_groq(prompt: str, system: str, temperature: float) -> str:
@@ -60,14 +94,29 @@ def _call_groq(prompt: str, system: str, temperature: float) -> str:
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        json=payload,
-        headers=headers,
-        timeout=120,
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"].strip()
+    for attempt in range(3):
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=120,
+        )
+
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()
+
+        if attempt == 2:
+            response.raise_for_status()
+
+        retry_after = response.headers.get("Retry-After", "").strip()
+        if retry_after.isdigit():
+            delay = int(retry_after)
+        else:
+            delay = 2 * (attempt + 1)
+        time.sleep(delay)
+
+    raise ValueError("Groq request failed after retries")
 
 
 def _call_ollama(prompt: str, system: str, temperature: float) -> str:
@@ -80,11 +129,19 @@ def _call_ollama(prompt: str, system: str, temperature: float) -> str:
         "stream": False,
         "options": {"temperature": temperature},
     }
-    response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120
-    )
-    response.raise_for_status()
-    return response.json()["response"].strip()
+    for attempt in range(3):
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120
+        )
+
+        # Retry transient server-side failures (e.g., model load hiccups).
+        if response.status_code < 500 or attempt == 2:
+            response.raise_for_status()
+            return response.json()["response"].strip()
+
+        time.sleep(2 * (attempt + 1))
+
+    raise ValueError("Ollama request failed after retries")
 
 
 def _call_hf(prompt: str, system: str, temperature: float) -> str:

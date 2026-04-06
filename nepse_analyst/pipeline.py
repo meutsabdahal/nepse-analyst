@@ -38,6 +38,48 @@ def _get_news_freshness() -> str:
         return "News data freshness unknown"
 
 
+def _fallback_sql_synthesis(rows: list[dict], language: str) -> str:
+    """Create a concise non-LLM summary when synthesis model calls fail."""
+    if not rows:
+        if language == "ne":
+            return "क्वेरी सफल भयो, तर कुनै पङ्क्ति नतिजा फेला परेन।"
+        return "The query executed successfully, but no rows were returned."
+
+    top_rows = rows[:3]
+    if language == "ne":
+        lines = [f"क्वेरी सफल भयो। कुल {len(rows)} पङ्क्ति प्राप्त भयो। शीर्ष नतिजा:"]
+    else:
+        lines = [
+            f"Query executed successfully. Retrieved {len(rows)} row(s). Top results:"
+        ]
+
+    for row in top_rows:
+        parts = [f"{k}: {v}" for k, v in row.items()]
+        lines.append("- " + ", ".join(parts))
+    return "\n".join(lines)
+
+
+def _fallback_rag_synthesis(passages: list[dict], language: str) -> str:
+    """Create a concise non-LLM summary from retrieved passages."""
+    if not passages:
+        if language == "ne":
+            return "यस प्रश्नका लागि सम्बन्धित समाचार भेटिएन।"
+        return "No relevant news passages were found for this query."
+
+    top = passages[:3]
+    if language == "ne":
+        lines = ["प्राप्त समाचार अंशका आधारमा मुख्य शीर्षकहरू:"]
+    else:
+        lines = ["Based on retrieved passages, here are the most relevant headlines:"]
+
+    for p in top:
+        published_at = p.get("published_at", "")
+        title = p.get("title", "Untitled")
+        score = p.get("relevance_score", 0.0)
+        lines.append(f"- [{score:.3f}] {published_at} | {title}")
+    return "\n".join(lines)
+
+
 # Route handlers
 
 
@@ -77,7 +119,10 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         columns=result["columns"],
         query_language=language,
     )
-    answer = llm.call(synthesis_prompt, temperature=0.1)
+    try:
+        answer = llm.call(synthesis_prompt, temperature=0.1)
+    except Exception:
+        answer = _fallback_sql_synthesis(result["rows"], language)
 
     return {
         "success": True,
@@ -141,7 +186,10 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
         }
 
     synthesis_prompt = build_rag_synthesis_prompt(query, passages, language)
-    answer = llm.call(synthesis_prompt, temperature=0.1)
+    try:
+        answer = llm.call(synthesis_prompt, temperature=0.1)
+    except Exception:
+        answer = _fallback_rag_synthesis(passages, language)
 
     return {
         "success": True,
