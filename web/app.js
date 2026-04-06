@@ -4,17 +4,22 @@ const state = {
     threads: [],
     activeThreadId: null,
     loading: false,
+    abortController: null,
+    pendingThreadId: null,
+    stopRequested: false,
 };
 
 const el = {
     rail: document.getElementById("leftRail"),
     railToggleButton: document.getElementById("railToggleButton"),
     newChatButton: document.getElementById("newChatButton"),
+    clearThreadsButton: document.getElementById("clearThreadsButton"),
     threadList: document.getElementById("threadList"),
     messageFeed: document.getElementById("messageFeed"),
     composerForm: document.getElementById("composerForm"),
     composerInput: document.getElementById("composerInput"),
     sendButton: document.getElementById("sendButton"),
+    stopButton: document.getElementById("stopButton"),
     typingIndicator: document.getElementById("typingIndicator"),
     exampleStrip: document.getElementById("exampleStrip"),
     messageTemplate: document.getElementById("messageTemplate"),
@@ -74,9 +79,57 @@ function getActiveThread() {
     return state.threads.find((thread) => thread.id === state.activeThreadId) || null;
 }
 
+function getThreadById(threadId) {
+    return state.threads.find((thread) => thread.id === threadId) || null;
+}
+
 function setActiveThread(threadId) {
     state.activeThreadId = threadId;
     saveState();
+    render();
+}
+
+function stopActiveRequest() {
+    if (!state.loading || !state.abortController || state.stopRequested) {
+        return;
+    }
+    state.stopRequested = true;
+    el.stopButton.disabled = true;
+    el.stopButton.textContent = "Stopping...";
+    state.abortController.abort();
+}
+
+function deleteThread(threadId) {
+    const index = state.threads.findIndex((thread) => thread.id === threadId);
+    if (index < 0) {
+        return;
+    }
+
+    if (state.loading && state.pendingThreadId === threadId) {
+        stopActiveRequest();
+    }
+
+    state.threads.splice(index, 1);
+
+    if (state.threads.length === 0) {
+        createThread();
+    } else if (state.activeThreadId === threadId || !getActiveThread()) {
+        state.activeThreadId = state.threads[0].id;
+        saveState();
+    } else {
+        saveState();
+    }
+
+    render();
+}
+
+function clearThreads() {
+    if (state.loading) {
+        stopActiveRequest();
+    }
+    state.threads = [];
+    state.activeThreadId = null;
+    createThread();
     render();
 }
 
@@ -103,10 +156,38 @@ function titleCase(role) {
     return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+function stripTrailingDisclaimer(text) {
+    if (!text) {
+        return "";
+    }
+    return String(text)
+        .replace(/\n{1,2}---\s*\n\s*⚠️[\s\S]*$/u, "")
+        .trim();
+}
+
+function extractPriceFreshness(dataFreshness) {
+    if (!dataFreshness || typeof dataFreshness !== "string") {
+        return "";
+    }
+
+    const segments = dataFreshness.split("|").map((s) => s.trim());
+    const priceSegment = segments.find((s) => s.startsWith("Price data last updated:"));
+    return priceSegment || "";
+}
+
 function appendMessage(role, content, meta = null) {
     let thread = getActiveThread();
     if (!thread) {
         thread = createThread();
+    }
+
+    return appendMessageToThread(thread.id, role, content, meta);
+}
+
+function appendMessageToThread(threadId, role, content, meta = null) {
+    const thread = getThreadById(threadId);
+    if (!thread) {
+        return null;
     }
 
     thread.messages.push({
@@ -123,6 +204,7 @@ function appendMessage(role, content, meta = null) {
 
     thread.updatedAt = nowIso();
     saveState();
+    return thread;
 }
 
 function formatValue(value) {
@@ -140,6 +222,8 @@ function formatValue(value) {
 
 function renderThreadList() {
     el.threadList.innerHTML = "";
+    el.clearThreadsButton.disabled = state.loading || state.threads.length === 0;
+
     const sorted = [...state.threads].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
     for (const thread of sorted) {
@@ -147,15 +231,32 @@ function renderThreadList() {
         li.className = "thread-item" + (thread.id === state.activeThreadId ? " active" : "");
         li.tabIndex = 0;
 
+        const titleRow = document.createElement("div");
+        titleRow.className = "thread-title-row";
+
         const title = document.createElement("p");
         title.className = "thread-title";
         title.textContent = thread.title;
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "thread-delete-button";
+        remove.title = "Delete chat";
+        remove.setAttribute("aria-label", `Delete chat ${thread.title}`);
+        remove.textContent = "\u00d7";
+
+        remove.addEventListener("click", (event) => {
+            event.stopPropagation();
+            deleteThread(thread.id);
+        });
+
+        titleRow.append(title, remove);
 
         const subtitle = document.createElement("p");
         subtitle.className = "thread-subtitle";
         subtitle.textContent = `${thread.messages.length} messages · ${formatTime(thread.updatedAt)}`;
 
-        li.append(title, subtitle);
+        li.append(titleRow, subtitle);
         li.addEventListener("click", () => setActiveThread(thread.id));
         li.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
@@ -172,28 +273,18 @@ function renderSourceMeta(container, meta) {
         return;
     }
 
-    const row = document.createElement("div");
-    row.className = "meta-row";
+    const priceFreshness = extractPriceFreshness(meta.data_freshness);
+    if (priceFreshness) {
+        const row = document.createElement("div");
+        row.className = "meta-row";
 
-    const chips = [
-        `Route: ${meta.route || "N/A"}`,
-        `Status: ${meta.success ? "Success" : "Partial"}`,
-        `Language: ${meta.query_language || "N/A"}`,
-    ];
-    if (meta.data_freshness) {
-        chips.push(meta.data_freshness);
-    }
-    if (meta.guardrail_type) {
-        chips.push(`Guardrail: ${meta.guardrail_type}`);
-    }
-
-    for (const text of chips) {
         const chip = document.createElement("span");
         chip.className = "chip";
-        chip.textContent = text;
+        chip.textContent = priceFreshness;
         row.append(chip);
+
+        container.append(row);
     }
-    container.append(row);
 
     if (meta.quick_facts && meta.quick_facts.symbol) {
         const factsWrap = document.createElement("section");
@@ -351,7 +442,10 @@ function renderMessages() {
         const meta = clone.querySelector(".message-meta");
 
         role.textContent = titleCase(message.role);
-        body.textContent = message.content;
+        body.textContent =
+            message.role === "assistant"
+                ? stripTrailingDisclaimer(message.content)
+                : message.content;
 
         if (message.role === "assistant") {
             renderSourceMeta(meta, message.meta);
@@ -371,17 +465,34 @@ function renderExamples(examples) {
         button.className = "example-chip";
         button.textContent = text;
         button.addEventListener("click", () => {
-            el.composerInput.value = text;
-            autoResizeComposer();
             sendMessage(text);
         });
         el.exampleStrip.append(button);
     }
 }
 
+function updateExampleStripVisibility() {
+    const thread = getActiveThread();
+    const shouldShow = !thread || thread.messages.length === 0;
+    el.exampleStrip.classList.toggle("hidden", !shouldShow);
+}
+
 function toggleLoading(value) {
     state.loading = value;
+    el.newChatButton.disabled = value;
     el.sendButton.disabled = value;
+    el.sendButton.classList.toggle("hidden", value);
+    el.stopButton.classList.toggle("hidden", !value);
+    if (value) {
+        state.stopRequested = false;
+        el.stopButton.disabled = false;
+        el.stopButton.textContent = "Stop";
+    } else {
+        state.stopRequested = false;
+        el.stopButton.disabled = true;
+        el.stopButton.textContent = "Stop";
+    }
+    el.clearThreadsButton.disabled = value || state.threads.length === 0;
     el.typingIndicator.classList.toggle("hidden", !value);
 }
 
@@ -396,15 +507,25 @@ async function sendMessage(message) {
         return;
     }
 
-    appendMessage("user", text);
+    let thread = getActiveThread();
+    if (!thread) {
+        thread = createThread();
+    }
+    const requestThreadId = thread.id;
+
+    appendMessageToThread(requestThreadId, "user", text);
     render();
     toggleLoading(true);
+
+    state.abortController = new AbortController();
+    state.pendingThreadId = requestThreadId;
 
     try {
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: text }),
+            signal: state.abortController.signal,
         });
 
         if (!response.ok) {
@@ -412,28 +533,46 @@ async function sendMessage(message) {
         }
 
         const payload = await response.json();
-        appendMessage("assistant", payload.answer || "No response.", {
-            success: payload.success,
-            route: payload.route,
-            guardrail_type: payload.guardrail_type,
-            query_language: payload.query_language,
-            data_freshness: payload.data_freshness,
-            quick_facts: payload.quick_facts,
-            sources: payload.sources,
-            error: payload.error,
-        });
-    } catch (error) {
-        appendMessage(
+        appendMessageToThread(
+            requestThreadId,
             "assistant",
-            "I could not process your request right now. Please retry in a moment.",
+            stripTrailingDisclaimer(payload.answer || "No response."),
             {
+                success: payload.success,
+                route: payload.route,
+                guardrail_type: payload.guardrail_type,
+                query_language: payload.query_language,
+                data_freshness: payload.data_freshness,
+                quick_facts: payload.quick_facts,
+                sources: payload.sources,
+                error: payload.error,
+            }
+        );
+    } catch (error) {
+        const isAborted = error instanceof DOMException && error.name === "AbortError";
+        if (isAborted) {
+            appendMessageToThread(requestThreadId, "assistant", "Stopped processing this query.", {
                 success: false,
                 route: "SYSTEM",
                 query_language: "en",
-                error: error instanceof Error ? error.message : String(error),
-            }
-        );
+                error: "Request stopped by user",
+            });
+        } else {
+            appendMessageToThread(
+                requestThreadId,
+                "assistant",
+                "I could not process your request right now. Please retry in a moment.",
+                {
+                    success: false,
+                    route: "SYSTEM",
+                    query_language: "en",
+                    error: error instanceof Error ? error.message : String(error),
+                }
+            );
+        }
     } finally {
+        state.abortController = null;
+        state.pendingThreadId = null;
         toggleLoading(false);
         render();
     }
@@ -442,6 +581,7 @@ async function sendMessage(message) {
 function render() {
     renderThreadList();
     renderMessages();
+    updateExampleStripVisibility();
 }
 
 async function hydrateExamples() {
@@ -480,8 +620,16 @@ function bindEvents() {
         render();
     });
 
+    el.clearThreadsButton.addEventListener("click", () => {
+        clearThreads();
+    });
+
     el.railToggleButton.addEventListener("click", () => {
         el.rail.classList.toggle("open");
+    });
+
+    el.stopButton.addEventListener("click", () => {
+        stopActiveRequest();
     });
 
     el.composerForm.addEventListener("submit", async (event) => {
