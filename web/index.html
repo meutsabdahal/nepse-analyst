@@ -25,11 +25,13 @@
             <button id="newChatButton" class="new-chat-button" type="button">New chat</button>
 
             <div class="thread-wrap">
-                <div class="thread-head">
-                    <p class="thread-label">Recent chats</p>
-                    <button id="clearThreadsButton" class="clear-threads-button" type="button">Clear</button>
-                </div>
+                <p class="thread-label">Recent chats</p>
                 <ul id="threadList" class="thread-list"></ul>
+            </div>
+
+            <div class="rail-footer">
+                <p>Research support only.</p>
+                <p>No buy/sell or prediction advice.</p>
             </div>
         </aside>
 
@@ -58,15 +60,8 @@
             <form id="composerForm" class="composer" autocomplete="off">
                 <textarea id="composerInput" rows="1" maxlength="4000"
                     placeholder="Message NEPSE Analyst..."></textarea>
-                <div class="composer-actions">
-                    <button id="sendButton" type="submit">Send</button>
-                    <button id="stopButton" class="stop-button hidden" type="button">Stop</button>
-                </div>
+                <button id="sendButton" type="submit">Send</button>
             </form>
-
-            <div class="rail-footer">
-                <p>Research support only. No buy/sell or prediction advice.</p>
-            </div>
         </main>
     </div>
 

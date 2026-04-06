@@ -49,7 +49,7 @@ Core package lives in `nepse_analyst/` and frontend assets live in `web/`.
 Prerequisites:
 - Python 3.12+
 - Local data artifacts prepared (SQLite DB and vector store)
-- Optional: Groq or Hugging Face API key for cloud LLM mode
+- Optional: Groq API key for cloud LLM mode
 
 1. Install dependencies
 
@@ -58,9 +58,8 @@ Prerequisites:
 2. Configure environment
 
 Copy `.env.example` to `.env` and set values:
-- `LLM_PROVIDER=groq`, `LLM_PROVIDER=ollama`, or `LLM_PROVIDER=hf`
+- `LLM_PROVIDER=groq` or `LLM_PROVIDER=ollama`
 - `GROQ_API_KEY=...` (if using Groq)
-- `HF_API_KEY=...` and `HF_LLM_MODEL=...` (if using Hugging Face)
 - `OLLAMA_MODEL=llama3.2:3b` (if using Ollama)
 
 3. Ensure data artifacts exist
@@ -78,10 +77,6 @@ For full ingestion/index refresh use notebooks:
 - `notebooks/ingest_fundamentals.ipynb`
 - `notebooks/ingest_ipos.ipynb`
 - `notebooks/ingest_news.ipynb`
-
-Notes for fundamentals coverage:
-- `notebooks/ingest_fundamentals.ipynb` now ingests broad equity coverage by default (excluding `Govt. Bonds`, `Mutual Fund`, and `Corp. Debentures`).
-- Use the `INCLUDE_ONLY_SECTORS` setting in that notebook when you want a faster targeted refresh.
 
 4. Run the app
 
