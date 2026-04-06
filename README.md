@@ -101,11 +101,18 @@ Sample request:
 
 ## Evaluation
 
-Run benchmark in ground-truth mode (validates benchmark SQL against DB):
+Run benchmark in ground-truth mode:
+- Validates benchmark SQL against DB
+- Runs OOS guardrail checks
+- Runs RAG retrieval relevance checks
+- Emits per-query latency summary
 
 `uv run python scripts/evaluate_benchmark.py --mode ground-truth`
 
 Run benchmark in pipeline mode (requires configured LLM):
+- Scores model SQL generation against benchmark ground truth
+- Runs OOS and RAG relevance checks
+- Emits PRD target flags in the report (`criteria`)
 
 `uv run python scripts/evaluate_benchmark.py --mode pipeline`
 
