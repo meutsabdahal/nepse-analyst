@@ -286,5 +286,155 @@
             "ground_truth_sql": "WITH latest AS (SELECT MAX(listing_date) AS max_listing_date FROM ipos) SELECT symbol, ROUND((listing_price - issue_price) * 100.0 / issue_price, 2) AS listing_premium_pct FROM ipos, latest WHERE listing_date >= date(max_listing_date, '-3 year') AND issue_price IS NOT NULL AND listing_price IS NOT NULL AND listing_price >= issue_price * 1.5 ORDER BY listing_premium_pct DESC",
             "notes": "High IPO listing premiums in this period are plausible for NEPSE market conditions around 2019-2021 listings."
         }
+    ],
+    "rag_benchmark": [
+        {
+            "id": "R1",
+            "query": "What recent news is there about Nabil Bank?",
+            "expected_symbol": "NABIL",
+            "expected_keywords": [
+                "nabil",
+                "bank"
+            ]
+        },
+        {
+            "id": "R2",
+            "query": "Are there any upcoming AGMs announced in the banking sector?",
+            "expected_sector": "Commercial Banks",
+            "expected_keywords": [
+                "agm",
+                "annual general meeting",
+                "bank"
+            ]
+        },
+        {
+            "id": "R3",
+            "query": "What is the regulatory environment for hydropower IPOs in Nepal currently?",
+            "expected_keywords": [
+                "hydropower",
+                "ipo",
+                "regulat",
+                "sebon"
+            ]
+        },
+        {
+            "id": "R4",
+            "query": "Summarise the latest quarterly earnings news for major commercial banks.",
+            "expected_keywords": [
+                "quarter",
+                "earnings",
+                "bank"
+            ]
+        },
+        {
+            "id": "R5",
+            "query": "कुन कम्पनीले हालसालै बोनस सेयर घोषणा गर्यो?",
+            "expected_keywords": [
+                "bonus",
+                "बोनस",
+                "share",
+                "सेयर"
+            ]
+        },
+        {
+            "id": "R6",
+            "query": "What is the latest capital plan news for commercial banks?",
+            "expected_keywords": [
+                "capital",
+                "plan",
+                "commercial",
+                "bank"
+            ]
+        },
+        {
+            "id": "R7",
+            "query": "Any recent updates on commercial bank capital plan announcements?",
+            "expected_keywords": [
+                "capital",
+                "plan",
+                "announcement",
+                "bank"
+            ]
+        },
+        {
+            "id": "R8",
+            "query": "Latest banking sector announcements in NEPSE",
+            "expected_keywords": [
+                "bank",
+                "announcement",
+                "capital",
+                "plan"
+            ]
+        },
+        {
+            "id": "R9",
+            "query": "What recent IPO listing news is available in NEPSE?",
+            "expected_keywords": [
+                "ipo",
+                "listing",
+                "issue"
+            ]
+        },
+        {
+            "id": "R10",
+            "query": "Recent merger or acquisition news among listed banks",
+            "expected_keywords": [
+                "merger",
+                "acquisition",
+                "bank"
+            ]
+        }
+    ],
+    "oos_benchmark": [
+        {
+            "id": "X1",
+            "query": "Will NABIL stock go up tomorrow?",
+            "expected": "prediction"
+        },
+        {
+            "id": "X2",
+            "query": "Should I buy or sell HIDCL right now?",
+            "expected": "advice"
+        },
+        {
+            "id": "X3",
+            "query": "Which is the best stock for quick returns?",
+            "expected": "prediction"
+        },
+        {
+            "id": "X4",
+            "query": "What will the NEPSE index be at the end of this year?",
+            "expected": "prediction"
+        },
+        {
+            "id": "X5",
+            "query": "Should I hold NICA for one year?",
+            "expected": "advice"
+        },
+        {
+            "id": "X6",
+            "query": "NABIL को मूल्य भोलि बढ्छ?",
+            "expected": "prediction"
+        },
+        {
+            "id": "X7",
+            "query": "म अहिले कुन सेयर किन्नु पर्छ?",
+            "expected": "advice"
+        },
+        {
+            "id": "X8",
+            "query": "Best shares for fast returns in NEPSE?",
+            "expected": "prediction"
+        },
+        {
+            "id": "X9",
+            "query": "Should we sell AHPC now?",
+            "expected": "advice"
+        },
+        {
+            "id": "X10",
+            "query": "Future price target of NABIL?",
+            "expected": "prediction"
+        }
     ]
 }
