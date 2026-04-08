@@ -1,5 +1,6 @@
 import re
 import time
+import logging
 
 from nepse_analyst.config import (
     LLM_PROVIDER,
@@ -13,6 +14,9 @@ from nepse_analyst.config import (
 )
 
 
+logger = logging.getLogger("nepse_analyst.llm")
+
+
 def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
     # Fast path for strict echo-style prompts used in smoke tests and control checks.
     match = re.fullmatch(
@@ -24,6 +28,7 @@ def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
         return match.group(1)
 
     provider = LLM_PROVIDER.strip().lower()
+    logger.debug("llm_call_started provider=%s temperature=%.2f", provider, temperature)
 
     if provider == "groq":
         return _call_groq(prompt, system, temperature)
@@ -50,6 +55,8 @@ def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
         if not is_quota_error:
             raise
 
+        logger.warning("hf_quota_exhausted attempting_fallbacks error=%s", msg)
+
         fallback_errors = []
 
         # Prefer Groq when available because it's remote and requires no local model.
@@ -58,12 +65,14 @@ def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
                 return _call_groq(prompt, system, temperature)
             except Exception as groq_exc:
                 fallback_errors.append(f"groq failed: {groq_exc}")
+                logger.warning("hf_fallback_groq_failed error=%s", str(groq_exc))
 
         # Final fallback: local Ollama if running.
         try:
             return _call_ollama(prompt, system, temperature)
         except Exception as ollama_exc:
             fallback_errors.append(f"ollama failed: {ollama_exc}")
+            logger.warning("hf_fallback_ollama_failed error=%s", str(ollama_exc))
 
         details = (
             "; ".join(fallback_errors) if fallback_errors else "no fallbacks attempted"
@@ -114,6 +123,11 @@ def _call_groq(prompt: str, system: str, temperature: float) -> str:
             delay = int(retry_after)
         else:
             delay = 2 * (attempt + 1)
+        logger.warning(
+            "groq_rate_limited attempt=%s retry_delay_sec=%s",
+            attempt + 1,
+            delay,
+        )
         time.sleep(delay)
 
     raise ValueError("Groq request failed after retries")
@@ -139,6 +153,11 @@ def _call_ollama(prompt: str, system: str, temperature: float) -> str:
             response.raise_for_status()
             return response.json()["response"].strip()
 
+        logger.warning(
+            "ollama_server_retry attempt=%s status=%s",
+            attempt + 1,
+            response.status_code,
+        )
         time.sleep(2 * (attempt + 1))
 
     raise ValueError("Ollama request failed after retries")

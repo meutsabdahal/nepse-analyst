@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
+import time
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -23,6 +26,8 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+logger = logging.getLogger("nepse_analyst.app")
 
 
 class ChatRequest(BaseModel):
@@ -57,11 +62,26 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     if not query:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    result = run(query)
+    request_id = str(uuid4())
+    started = time.perf_counter()
+    result = run(query, request_id=request_id)
+    latency_ms = (time.perf_counter() - started) * 1000.0
+
+    logger.info(
+        "chat_completed request_id=%s route=%s success=%s guardrail=%s latency_ms=%.2f error=%s",
+        request_id,
+        result.get("route"),
+        result.get("success"),
+        result.get("guardrail_type"),
+        latency_ms,
+        result.get("error"),
+    )
+
     symbol = extract_symbol_from_result(result, query)
     quick_facts = fetch_quick_facts(symbol) if symbol else None
 
     return {
+        "request_id": request_id,
         "query": query,
         "answer": result.get("answer", "No response returned."),
         "success": bool(result.get("success", False)),

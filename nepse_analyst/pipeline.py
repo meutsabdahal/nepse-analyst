@@ -1,5 +1,7 @@
 from datetime import datetime
+import logging
 import re
+import time
 
 from nepse_analyst.router import classify
 from nepse_analyst.guardrails import build_decline_response, append_disclaimer
@@ -13,6 +15,9 @@ from nepse_analyst.prompts import (
     build_rag_synthesis_prompt,
     build_direct_prompt,
 )
+
+
+logger = logging.getLogger("nepse_analyst.pipeline")
 
 
 # Data freshness helpers
@@ -702,7 +707,7 @@ def _handle_direct(query: str, language: str) -> dict:
 # Main entry point
 
 
-def run(query: str) -> dict:
+def run(query: str, request_id: str | None = None) -> dict:
     """
     Process a natural language query end-to-end.
     This is the single function the chat API calls.
@@ -743,14 +748,29 @@ def run(query: str) -> dict:
     entities = routing["entities"]
     guardrail = routing.get("guardrail")
 
+    logger.info(
+        "route_selected request_id=%s route=%s guardrail=%s language=%s confidence=%s",
+        request_id,
+        route,
+        guardrail,
+        language,
+        routing.get("confidence"),
+    )
+
     # Step 2 — Guardrail intercept
     if route == "OOS" or guardrail:
         decline_type = guardrail or "unknown"
         decline = build_decline_response(query, decline_type)
         decline["guardrail_type"] = decline_type
+        logger.info(
+            "route_short_circuit request_id=%s route=OOS guardrail_type=%s",
+            request_id,
+            decline_type,
+        )
         return decline
 
     # Step 3 — Dispatch to the correct pathway
+    dispatch_started = time.perf_counter()
     try:
         if route == "SQL":
             result = _handle_sql(query, language, entities)
@@ -763,6 +783,12 @@ def run(query: str) -> dict:
         else:
             result = _handle_sql(query, language, entities)  # safe fallback
     except Exception as e:
+        logger.exception(
+            "pipeline_unhandled_error request_id=%s route=%s error=%s",
+            request_id,
+            route,
+            str(e),
+        )
         result = {
             "success": False,
             "answer": append_disclaimer(
@@ -777,6 +803,16 @@ def run(query: str) -> dict:
             "data_freshness": None,
             "error": str(e),
         }
+
+    dispatch_ms = (time.perf_counter() - dispatch_started) * 1000.0
+    logger.info(
+        "route_completed request_id=%s route=%s success=%s latency_ms=%.2f error=%s",
+        request_id,
+        result.get("route"),
+        result.get("success"),
+        dispatch_ms,
+        result.get("error"),
+    )
 
     result["guardrail_type"] = None
     return result
