@@ -45,14 +45,19 @@ def _load_symbols() -> set[str]:
         return set()
 
 
+def _sort_symbols(symbols: set[str]) -> tuple[str, ...]:
+    """Sort symbols so extraction is deterministic and prefers more specific matches."""
+    return tuple(sorted(symbols, key=lambda symbol: (-len(symbol), symbol)))
+
+
 # Module-level symbol cache — loaded once, avoids repeated DB hits
-_SYMBOLS: set[str] = set()
+_SYMBOLS: tuple[str, ...] = tuple()
 
 
-def _get_symbols() -> set[str]:
+def _get_symbols() -> tuple[str, ...]:
     global _SYMBOLS
     if not _SYMBOLS:
-        _SYMBOLS = _load_symbols()
+        _SYMBOLS = _sort_symbols(_load_symbols())
     return _SYMBOLS
 
 
