@@ -156,15 +156,6 @@ function titleCase(role) {
     return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-function stripTrailingDisclaimer(text) {
-    if (!text) {
-        return "";
-    }
-    return String(text)
-        .replace(/\n{1,2}---\s*\n\s*⚠️[\s\S]*$/u, "")
-        .trim();
-}
-
 function extractPriceFreshness(dataFreshness) {
     if (!dataFreshness || typeof dataFreshness !== "string") {
         return "";
@@ -442,10 +433,7 @@ function renderMessages() {
         const meta = clone.querySelector(".message-meta");
 
         role.textContent = titleCase(message.role);
-        body.textContent =
-            message.role === "assistant"
-                ? stripTrailingDisclaimer(message.content)
-                : message.content;
+        body.textContent = message.content;
 
         if (message.role === "assistant") {
             renderSourceMeta(meta, message.meta);
@@ -536,7 +524,7 @@ async function sendMessage(message) {
         appendMessageToThread(
             requestThreadId,
             "assistant",
-            stripTrailingDisclaimer(payload.answer || "No response."),
+            payload.answer || "No response.",
             {
                 success: payload.success,
                 route: payload.route,
