@@ -4,7 +4,7 @@ import os
 import re
 import sqlite3
 
-from nepse_analyst.config import DB_PATH
+from nepse_analyst.config import DB_PATH, DB_BUSY_TIMEOUT_MS
 
 
 # Table names
@@ -194,22 +194,38 @@ def validate_read_only_sql(sql: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def get_connection():
+def get_connection(read_only: bool = False):
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+
+    kwargs: dict = {"timeout": max(DB_BUSY_TIMEOUT_MS, 0) / 1000.0}
+    db_target = DB_PATH
+    if read_only:
+        if not os.path.exists(DB_PATH):
+            raise FileNotFoundError(f"Database not found at {DB_PATH}")
+        db_target = f"file:{DB_PATH}?mode=ro"
+        kwargs["uri"] = True
+
+    conn = sqlite3.connect(db_target, **kwargs)
     conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout = {max(DB_BUSY_TIMEOUT_MS, 0)}")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
 def create_database():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.executescript(FULL_SCHEMA_SQL)  # combined CREATE TABLE + INDEX string
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.executescript(FULL_SCHEMA_SQL)  # combined CREATE TABLE + INDEX string
+        conn.commit()
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def execute_query(sql: str) -> dict:
+    conn = None
     try:
         is_valid, validation_error = validate_read_only_sql(sql)
         if not is_valid:
@@ -221,12 +237,11 @@ def execute_query(sql: str) -> dict:
                 "error": validation_error,
             }
 
-        conn = get_connection()
+        conn = get_connection(read_only=True)
         cursor = conn.cursor()
         cursor.execute(sql)
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
         return {
             "success": True,
             "rows": [dict(zip(columns, row)) for row in rows],
@@ -242,18 +257,25 @@ def execute_query(sql: str) -> dict:
             "row_count": 0,
             "error": str(e),
         }
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def get_schema_summary() -> str:
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = [r[0] for r in cursor.fetchall()]
-    lines = []
-    for table in tables:
-        cursor.execute(f"PRAGMA table_info({table})")
-        cols = cursor.fetchall()
-        col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
-        lines.append(f"{table}({col_defs})")
-    conn.close()
-    return "\n".join(lines)
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [r[0] for r in cursor.fetchall()]
+        lines = []
+        for table in tables:
+            cursor.execute(f"PRAGMA table_info({table})")
+            cols = cursor.fetchall()
+            col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
+            lines.append(f"{table}({col_defs})")
+        return "\n".join(lines)
+    finally:
+        if conn is not None:
+            conn.close()

@@ -42,6 +42,7 @@ NEWS_STALE_DAYS = _env_int("NEWS_STALE_DAYS", 30)
 MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 CORPUS_STATS_TTL_SEC = _env_int("CORPUS_STATS_TTL_SEC", 60)
+DB_BUSY_TIMEOUT_MS = _env_int("DB_BUSY_TIMEOUT_MS", 5000)
 
 # Scraping Settings
 SCRAPE_DELAY_SEC = _env_int("SCRAPE_DELAY_SEC", 3)  # minimum seconds between requests
