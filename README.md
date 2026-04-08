@@ -55,6 +55,11 @@ Prerequisites:
 
 `uv sync`
 
+Environment note (recommended workflow):
+- Use `uv run ...` for all project commands.
+- You do not need to activate a virtual environment manually.
+- If `source .venv/bin/activate` fails in your shell, continue with `uv run` commands.
+
 2. Configure environment
 
 Copy `.env.example` to `.env` and set values:
@@ -123,6 +128,8 @@ Reports are written to `evaluation/results/` as JSON.
 Run regression tests:
 
 `uv run python -m unittest discover -s tests -p "test_*.py"`
+
+Tip: keep using `uv run` for scripts and tests instead of relying on shell activation.
 
 ## Known Data Constraints
 
