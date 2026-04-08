@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 
 from nepse_analyst.config import DB_PATH
@@ -158,6 +159,40 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 FULL_SCHEMA_SQL = "\n\n".join(SCHEMA_STATEMENTS)
 
+_WRITE_SQL_PATTERN = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|TRUNCATE|ATTACH|DETACH|"
+    r"PRAGMA|VACUUM|REINDEX|ANALYZE|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Remove SQL comments so validation checks operate on executable tokens."""
+    no_block_comments = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*", " ", no_block_comments)
+
+
+def validate_read_only_sql(sql: str) -> tuple[bool, str | None]:
+    """Validate that SQL is a single read-only SELECT/WITH statement."""
+    stripped = (sql or "").strip()
+    if not stripped:
+        return False, "Empty SQL query"
+
+    normalized = _strip_sql_comments(stripped)
+    statements = [segment.strip() for segment in normalized.split(";") if segment.strip()]
+    if len(statements) != 1:
+        return False, "Only one SQL statement is allowed"
+
+    statement = statements[0]
+    upper = statement.upper()
+    if not (upper.startswith("SELECT ") or upper.startswith("WITH ")):
+        return False, "Only SELECT and WITH queries are allowed"
+
+    if _WRITE_SQL_PATTERN.search(upper):
+        return False, "Only read-only SQL is allowed"
+
+    return True, None
+
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -176,6 +211,16 @@ def create_database():
 
 def execute_query(sql: str) -> dict:
     try:
+        is_valid, validation_error = validate_read_only_sql(sql)
+        if not is_valid:
+            return {
+                "success": False,
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "error": validation_error,
+            }
+
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(sql)
