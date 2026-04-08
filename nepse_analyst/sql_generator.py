@@ -18,9 +18,7 @@ def _load_sql_overrides() -> dict[str, str]:
 
     _SQL_OVERRIDES = {}
     benchmark_path = (
-        Path(__file__).resolve().parents[1]
-        / "evaluation"
-        / "benchmark_questions.json"
+        Path(__file__).resolve().parents[1] / "evaluation" / "benchmark_questions.json"
     )
     try:
         payload = json.loads(benchmark_path.read_text(encoding="utf-8"))

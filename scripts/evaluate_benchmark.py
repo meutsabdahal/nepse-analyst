@@ -343,7 +343,9 @@ def _is_top_passage_relevant(case: dict[str, Any], top_passage: dict[str, Any]) 
             return False
 
     expected_keywords = [
-        str(k).strip().lower() for k in (case.get("expected_keywords") or []) if str(k).strip()
+        str(k).strip().lower()
+        for k in (case.get("expected_keywords") or [])
+        if str(k).strip()
     ]
     if expected_keywords:
         return any(k in text_blob for k in expected_keywords)
