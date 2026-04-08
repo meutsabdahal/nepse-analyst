@@ -12,7 +12,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from nepse_analyst.chat_helpers import build_passage_preview, extract_symbol_from_result, fetch_quick_facts
+from nepse_analyst.chat_helpers import (
+    build_passage_preview,
+    extract_symbol_from_result,
+    fetch_quick_facts,
+)
 from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
 from nepse_analyst.pipeline import run
 

@@ -9,7 +9,9 @@ class RouterEntityTests(unittest.TestCase):
         ordered = router._sort_symbols(symbols)
         self.assertEqual(ordered, ("NABIL", "AHPC", "NICA", "NIMB", "NIC"))
 
-    def test_extract_entities_uses_deterministic_order_for_multiple_symbols(self) -> None:
+    def test_extract_entities_uses_deterministic_order_for_multiple_symbols(
+        self,
+    ) -> None:
         original_cache = router._SYMBOLS
         try:
             router._SYMBOLS = ("NABIL", "NIMB")

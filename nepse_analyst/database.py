@@ -179,7 +179,9 @@ def validate_read_only_sql(sql: str) -> tuple[bool, str | None]:
         return False, "Empty SQL query"
 
     normalized = _strip_sql_comments(stripped)
-    statements = [segment.strip() for segment in normalized.split(";") if segment.strip()]
+    statements = [
+        segment.strip() for segment in normalized.split(";") if segment.strip()
+    ]
     if len(statements) != 1:
         return False, "Only one SQL statement is allowed"
 
@@ -267,7 +269,9 @@ def get_schema_summary() -> str:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         tables = [r[0] for r in cursor.fetchall()]
         lines = []
         for table in tables:
