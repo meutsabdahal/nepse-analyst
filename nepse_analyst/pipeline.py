@@ -712,7 +712,7 @@ def run(query: str) -> dict:
         "success":        bool,
         "answer":         str,      # final answer with disclaimer appended
         "route":          str,      # 'SQL' | 'RAG' | 'HYBRID' | 'DIRECT' | 'OOS'
-        "guardrail_type": str|None, # 'prediction' | 'advice' | None
+        "guardrail_type": str|None, # 'prediction' | 'advice' | 'unknown' | None
         "sql":            str|None, # generated SQL (for transparency panel)
         "sql_rows":       list,     # raw rows (for transparency panel)
         "passages":       list,     # retrieved news passages (for transparency panel)
@@ -745,8 +745,9 @@ def run(query: str) -> dict:
 
     # Step 2 — Guardrail intercept
     if route == "OOS" or guardrail:
-        decline = build_decline_response(query, guardrail or "prediction")
-        decline["guardrail_type"] = guardrail
+        decline_type = guardrail or "unknown"
+        decline = build_decline_response(query, decline_type)
+        decline["guardrail_type"] = decline_type
         return decline
 
     # Step 3 — Dispatch to the correct pathway

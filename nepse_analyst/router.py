@@ -176,11 +176,9 @@ def classify(query: str) -> dict:
         route = _heuristic_route(query, language, entities)
         confidence = "low"
 
-    # OOS from LLM — also run through guardrail builder
+    # OOS from LLM with no keyword match: mark as unknown rather than mislabeling.
     if route == "OOS" and not guardrail:
-        guardrail = (
-            "prediction"  # assume prediction if LLM classifies OOS but keywords missed
-        )
+        guardrail = "unknown"
 
     return {
         "route": route,

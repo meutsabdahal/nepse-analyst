@@ -180,6 +180,25 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
                 "I can help with fundamental research — company financial data, "
                 "sector comparisons, and recent news."
             )
+    else:
+        if lang == "ne":
+            message = (
+                "यो प्रश्न NEPSE Analyst को सुरक्षित कार्यक्षेत्र बाहिर पर्छ, "
+                "त्यसैले म यसलाई सीधा रूपमा उत्तर दिन सक्दिनँ।\n\n"
+                "म तलका अनुसन्धान कार्यहरूमा मद्दत गर्न सक्छु:\n"
+                "• कम्पनीको EPS, P/E, र बुक भ्यालु\n"
+                "• sector तुलना र ऐतिहासिक डेटा\n"
+                "• हालको समाचार र घोषणाहरू"
+            )
+        else:
+            message = (
+                "This query is outside NEPSE Analyst's safe operating scope, "
+                "so I cannot answer it directly.\n\n"
+                "I can help with research tasks such as:\n"
+                "• Company EPS, P/E ratio, and book value\n"
+                "• Sector comparisons and historical data\n"
+                "• Recent news and announcements"
+            )
 
     disclaimer = _DISCLAIMER_NE if lang == "ne" else _DISCLAIMER_EN
 

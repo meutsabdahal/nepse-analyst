@@ -9,6 +9,23 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(out.get("route"), "OOS")
         self.assertIn(out.get("guardrail_type"), {"prediction", "advice"})
 
+    def test_oos_unknown_guardrail_contract(self) -> None:
+        orig_classify = pipeline.classify
+        try:
+            pipeline.classify = lambda q: {
+                "route": "OOS",
+                "guardrail": None,
+                "language": "en",
+                "entities": {},
+                "confidence": "high",
+            }
+            out = pipeline.run("Tell me what I should do next")
+            self.assertTrue(out.get("success"))
+            self.assertEqual(out.get("route"), "OOS")
+            self.assertEqual(out.get("guardrail_type"), "unknown")
+        finally:
+            pipeline.classify = orig_classify
+
     def test_sql_contract_shape_with_stubs(self) -> None:
         orig_classify = pipeline.classify
         orig_generate = pipeline.generate_and_execute
