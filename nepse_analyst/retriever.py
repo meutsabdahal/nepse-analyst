@@ -1,15 +1,22 @@
 import numpy as np
+import time
 
 # ChromaDB 0.5.x expects np.float_ at import time, which was removed in NumPy 2.x.
 if not hasattr(np, "float_"):
     np.float_ = np.float64
 
 import chromadb
-from nepse_analyst.config import VECTOR_STORE_DIR, NEWS_COLLECTION, TOP_K_RAG
+from nepse_analyst.config import (
+    VECTOR_STORE_DIR,
+    NEWS_COLLECTION,
+    TOP_K_RAG,
+    CORPUS_STATS_TTL_SEC,
+)
 from nepse_analyst.embeddings import encode_query
 
 _client = None
 _collection = None
+_corpus_stats_cache: dict | None = None
 
 
 def _get_collection():
@@ -113,8 +120,32 @@ def search_by_symbol(symbol: str, top_k: int = TOP_K_RAG) -> list[dict]:
 
 def get_corpus_stats() -> dict:
     """Return basic stats about the indexed corpus — useful for the UI freshness indicator."""
+    global _corpus_stats_cache
+
+    now = time.time()
+    if (
+        CORPUS_STATS_TTL_SEC > 0
+        and _corpus_stats_cache is not None
+        and now < _corpus_stats_cache["expires_at"]
+    ):
+        return _corpus_stats_cache["value"]
+
     collection = _get_collection()
     count = collection.count()
+
+    if count == 0:
+        value = {
+            "total_documents": 0,
+            "earliest_date": "unknown",
+            "latest_date": "unknown",
+        }
+        if CORPUS_STATS_TTL_SEC > 0:
+            _corpus_stats_cache = {
+                "value": value,
+                "expires_at": now + CORPUS_STATS_TTL_SEC,
+            }
+        return value
+
     # Get date range by querying a sample
     sample = collection.query(
         query_embeddings=[encode_query("NEPSE market news").tolist()],
@@ -126,8 +157,16 @@ def get_corpus_stats() -> dict:
         for m in sample["metadatas"][0]
         if m.get("published_at")
     ]
-    return {
+    value = {
         "total_documents": count,
         "earliest_date": min(dates) if dates else "unknown",
         "latest_date": max(dates) if dates else "unknown",
     }
+
+    if CORPUS_STATS_TTL_SEC > 0:
+        _corpus_stats_cache = {
+            "value": value,
+            "expires_at": now + CORPUS_STATS_TTL_SEC,
+        }
+
+    return value
