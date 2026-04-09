@@ -131,6 +131,11 @@ Run regression tests:
 
 Tip: keep using `uv run` for scripts and tests instead of relying on shell activation.
 
+Troubleshooting (TestClient mismatch):
+- If you see `TypeError: Client.__init__() got an unexpected keyword argument 'follow_redirects'`, your Starlette and httpx versions are incompatible.
+- Short-term: prefer function-level API handler tests (as in `tests/test_app_api.py`) instead of `fastapi.testclient.TestClient`.
+- Long-term: align FastAPI/Starlette/httpx dependency versions in one update.
+
 ## Known Data Constraints
 
 From current benchmark dataset snapshot:
