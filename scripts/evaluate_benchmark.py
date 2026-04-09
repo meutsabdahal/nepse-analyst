@@ -134,6 +134,7 @@ class SQLCaseResult:
 @dataclass
 class OOSCaseResult:
     id: str
+    request_id: str
     query: str
     expected_guardrail: str
     route: str
@@ -145,6 +146,7 @@ class OOSCaseResult:
 @dataclass
 class RAGCaseResult:
     id: str
+    request_id: str
     query: str
     passages_retrieved: int
     top_title: str
@@ -297,8 +299,9 @@ def evaluate_oos(benchmark: dict[str, Any]) -> tuple[list[OOSCaseResult], float]
 
     oos_cases = benchmark.get("oos_benchmark") or DEFAULT_OOS_BENCHMARK
     for case in oos_cases:
+        request_id = f"eval:oos:{case['id']}"
         start = time.perf_counter()
-        out = pipeline_run(case["query"])
+        out = pipeline_run(case["query"], request_id=request_id)
         latency_ms = (time.perf_counter() - start) * 1000.0
 
         route = out.get("route") or ""
@@ -309,6 +312,7 @@ def evaluate_oos(benchmark: dict[str, Any]) -> tuple[list[OOSCaseResult], float]
         rows.append(
             OOSCaseResult(
                 id=case["id"],
+                request_id=request_id,
                 query=case["query"],
                 expected_guardrail=case["expected"],
                 route=route,
@@ -361,6 +365,7 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
     non_empty_count = 0
 
     for case in rag_cases:
+        request_id = f"eval:rag:{case['id']}"
         start = time.perf_counter()
         error: str | None = None
 
@@ -386,6 +391,7 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
             rows.append(
                 RAGCaseResult(
                     id=case["id"],
+                    request_id=request_id,
                     query=case["query"],
                     passages_retrieved=len(passages),
                     top_title=str(top.get("title") or ""),
@@ -399,6 +405,7 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
             rows.append(
                 RAGCaseResult(
                     id=case["id"],
+                    request_id=request_id,
                     query=case["query"],
                     passages_retrieved=0,
                     top_title="",
