@@ -2,9 +2,37 @@
 
 A natural language research assistant for Nepal's retail investors.
 
-## Financial Disclaimer
+## Benchmark Results (Front and Center)
 
-NEPSE Analyst is a research information tool only. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.
+Latest benchmark run date: 2026-04-11.
+
+| Metric | Pipeline Mode | Ground-Truth Mode |
+| --- | --- | --- |
+| SQL accuracy | 12/12 (100.0%) | 12/12 (100.0%) |
+| OOS guardrail accuracy | 10/10 (100.0%) | 10/10 (100.0%) |
+| RAG top-passage relevance | 10/10 relevant (100.0%) | 10/10 relevant (100.0%) |
+| RAG retrieval coverage | 10/10 retrieved (100.0%) | 10/10 retrieved (100.0%) |
+| Latency p95 | 465.13 ms | 436.60 ms |
+| Latency under 8s | 100.0% | 100.0% |
+
+Pipeline PRD target checks: 4/4 met.
+
+- Structured query accuracy target: met
+- OOS rejection target: met
+- RAG relevance target: met
+- Latency p95 under 8s target: met
+
+Latest report files:
+- [evaluation/results/report_pipeline_20260411_092046.json](evaluation/results/report_pipeline_20260411_092046.json)
+- [evaluation/results/report_ground-truth_20260411_092027.json](evaluation/results/report_ground-truth_20260411_092027.json)
+
+## What It Does
+
+NEPSE Analyst lets users ask natural-language questions about NEPSE-listed companies and returns grounded answers using:
+- Structured SQL for fundamentals, price history, dividends, and IPO data.
+- RAG retrieval over financial/news context.
+- Guardrails that reject prediction/advice requests and inject a financial disclaimer.
+- Source transparency in UI responses (SQL preview, row preview, retrieved passages).
 
 ## Current Status
 
@@ -17,6 +45,10 @@ Implemented:
 - Company quick-facts panel when a symbol can be inferred.
 - Benchmark runner CLI for SQL and OOS reporting.
 
+## Financial Disclaimer
+
+NEPSE Analyst is a research information tool only. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.
+
 ## Architecture
 
 Browser Chat UI (HTML/CSS/JS)
@@ -24,6 +56,14 @@ Browser Chat UI (HTML/CSS/JS)
 -> `nepse_analyst.pipeline.run`
 -> SQL / RAG / HYBRID / DIRECT / OOS
 -> Answer + metadata + source transparency
+
+Routing logic is intent-aware, not a fixed path:
+- `SQL`: selected when the question asks for precise, structured facts (for example EPS, dividend history, index comparisons, ranking/filtering).
+- `RAG`: selected when the question is narrative or context-heavy (for example recent announcements, policy/regulatory context, qualitative summaries).
+- `HYBRID`: selected when the same query needs both hard numbers and contextual explanation, so the pipeline combines SQL evidence with retrieved passages in one response.
+- `OOS`: selected when a query asks for prediction/advice and must be refused via guardrails.
+
+This routing layer is important for ambiguous real-world prompts because users rarely label their intent; the system infers it and chooses the minimum-cost path that still preserves answer quality and transparency.
 
 Core package lives in `nepse_analyst/` and frontend assets live in `web/`.
 

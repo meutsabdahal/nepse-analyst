@@ -37,7 +37,9 @@ class SqlSafetyTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "Only SELECT and WITH queries are allowed")
 
-    def test_execute_query_rejects_multi_statement_without_opening_connection(self) -> None:
+    def test_execute_query_rejects_multi_statement_without_opening_connection(
+        self,
+    ) -> None:
         with patch(
             "nepse_analyst.database.get_connection",
             side_effect=AssertionError("get_connection should not be called"),
