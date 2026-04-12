@@ -73,6 +73,24 @@ LIMIT 1
 """
 
 
+_PRICE_RANGE_52W_SQL = """
+WITH ref AS (
+    SELECT MAX(trade_date) AS max_date
+    FROM price_history
+    WHERE symbol = ?
+)
+SELECT
+    ? AS symbol,
+    ref.max_date AS latest_trade_date,
+    MIN(ph.low_price) AS low_52w,
+    MAX(ph.high_price) AS high_52w
+FROM ref
+LEFT JOIN price_history ph
+    ON ph.symbol = ?
+   AND ph.trade_date > date(ref.max_date, '-365 day')
+"""
+
+
 _DIVIDEND_STREAK_SQL = """
 WITH paid AS (
     SELECT
@@ -289,6 +307,145 @@ def _build_dividend_sector_coverage_fallback(query: str, language: str) -> dict 
     }
 
 
+def _is_price_range_query(query: str, entities: dict) -> bool:
+    """Detect requests for a 52-week style high/low range answer."""
+    metric = entities.get("metric")
+    if metric in {"price_range", "price_high", "price_low"}:
+        return True
+
+    q = query.lower()
+    if "52-week" in q or "52 week" in q:
+        return True
+
+    asks_high_low = "high" in q and "low" in q
+    asks_year_window = "year" in q or "52" in q
+    return asks_high_low and asks_year_window
+
+
+def _rows_have_price_range_values(rows: list[dict]) -> bool:
+    """Check if SQL rows contain non-null high/low values."""
+    if not rows:
+        return False
+
+    first = rows[0]
+    high_keys = [k for k in first.keys() if "high" in k.lower()]
+    low_keys = [k for k in first.keys() if "low" in k.lower()]
+    candidate_keys = high_keys + low_keys
+    if not candidate_keys:
+        return False
+
+    return any(first.get(k) is not None for k in candidate_keys)
+
+
+def _build_symbol_price_range_fallback(
+    query: str, language: str, entities: dict
+) -> dict | None:
+    """Return deterministic 52-week high/low answer for a single symbol."""
+    symbol = entities.get("symbol")
+    if not symbol or not _is_price_range_query(query, entities):
+        return None
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM companies WHERE symbol = ?", (symbol,))
+        company_row = cursor.fetchone()
+        company_name = (
+            company_row["name"] if company_row and company_row["name"] else symbol
+        )
+
+        cursor.execute(_PRICE_RANGE_52W_SQL, (symbol, symbol, symbol))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return None
+
+    row_dict = dict(row)
+    row_dict["name"] = company_name
+    high = row_dict.get("high_52w")
+    low = row_dict.get("low_52w")
+    latest_trade_date = row_dict.get("latest_trade_date")
+
+    if latest_trade_date is None:
+        if language == "ne":
+            answer = (
+                f"{company_name} ({symbol}) को price history हाल डेटासेटमा उपलब्ध छैन, "
+                "त्यसैले 52-week high/low गणना गर्न सकिएन।"
+            )
+        else:
+            answer = (
+                f"Price history for {company_name} ({symbol}) is not available in the "
+                "current dataset, so a 52-week high/low cannot be computed."
+            )
+        return {
+            "answer": answer,
+            "sql": _PRICE_RANGE_52W_SQL.strip(),
+            "sql_rows": [row_dict],
+        }
+
+    if high is None and low is None:
+        if language == "ne":
+            answer = (
+                f"{company_name} ({symbol}) का लागि {latest_trade_date} सम्म price history rows "
+                "भए पनि high/low मान उपलब्ध नभएकाले 52-week range निकाल्न सकिएन।"
+            )
+        else:
+            answer = (
+                f"Price rows exist for {company_name} ({symbol}) up to {latest_trade_date}, "
+                "but high/low values are missing, so the 52-week range cannot be computed."
+            )
+        return {
+            "answer": answer,
+            "sql": _PRICE_RANGE_52W_SQL.strip(),
+            "sql_rows": [row_dict],
+        }
+
+    high_text = _format_metric_value(high) if high is not None else "N/A"
+    low_text = _format_metric_value(low) if low is not None else "N/A"
+
+    metric = entities.get("metric")
+    if language == "ne":
+        if metric == "price_high":
+            answer = (
+                f"{company_name} ({symbol}) को 52-week high ({latest_trade_date} सम्मको window) "
+                f"{high_text} छ।"
+            )
+        elif metric == "price_low":
+            answer = (
+                f"{company_name} ({symbol}) को 52-week low ({latest_trade_date} सम्मको window) "
+                f"{low_text} छ।"
+            )
+        else:
+            answer = (
+                f"{company_name} ({symbol}) को 52-week high {high_text} र low {low_text} छ "
+                f"(window ending {latest_trade_date})।"
+            )
+    else:
+        if metric == "price_high":
+            answer = (
+                f"The 52-week high for {company_name} ({symbol}) is {high_text} "
+                f"(window ending {latest_trade_date})."
+            )
+        elif metric == "price_low":
+            answer = (
+                f"The 52-week low for {company_name} ({symbol}) is {low_text} "
+                f"(window ending {latest_trade_date})."
+            )
+        else:
+            answer = (
+                f"The 52-week high for {company_name} ({symbol}) is {high_text} and "
+                f"the 52-week low is {low_text} (window ending {latest_trade_date})."
+            )
+
+    return {
+        "answer": answer,
+        "sql": _PRICE_RANGE_52W_SQL.strip(),
+        "sql_rows": [row_dict],
+    }
+
+
 def _build_symbol_metric_fallback(language: str, entities: dict) -> dict | None:
     """Return a deterministic metric answer for single-symbol SQL questions."""
     symbol = entities.get("symbol")
@@ -486,6 +643,22 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "error": None,
             }
 
+        price_range_fallback = _build_symbol_price_range_fallback(
+            query, language, entities
+        )
+        if price_range_fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(price_range_fallback["answer"], language),
+                "route": "SQL",
+                "sql": price_range_fallback.get("sql"),
+                "sql_rows": price_range_fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
         fallback = _build_symbol_metric_fallback(language, entities)
         if fallback:
             return {
@@ -540,6 +713,22 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "error": None,
             }
 
+        price_range_fallback = _build_symbol_price_range_fallback(
+            query, language, entities
+        )
+        if price_range_fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(price_range_fallback["answer"], language),
+                "route": "SQL",
+                "sql": price_range_fallback.get("sql"),
+                "sql_rows": price_range_fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
         fallback = _build_symbol_metric_fallback(language, entities)
         if fallback:
             return {
@@ -548,6 +737,26 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": fallback.get("sql"),
                 "sql_rows": fallback.get("sql_rows", []),
+                "passages": [],
+                "query_language": language,
+                "data_freshness": _get_db_freshness(),
+                "error": None,
+            }
+
+    # If generated SQL returned null-like price range rows, override with deterministic fallback.
+    if _is_price_range_query(query, entities) and not _rows_have_price_range_values(
+        result["rows"]
+    ):
+        price_range_fallback = _build_symbol_price_range_fallback(
+            query, language, entities
+        )
+        if price_range_fallback:
+            return {
+                "success": True,
+                "answer": append_disclaimer(price_range_fallback["answer"], language),
+                "route": "SQL",
+                "sql": price_range_fallback.get("sql"),
+                "sql_rows": price_range_fallback.get("sql_rows", []),
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),

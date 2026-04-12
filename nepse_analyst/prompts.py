@@ -44,7 +44,7 @@ IMPORTANT RULES:
 1. Always use JOIN with companies table when filtering by sector
 2. For "latest fiscal year", use: WHERE fiscal_year = (SELECT MAX(fiscal_year) FROM fundamentals)
 3. For "last N trading days", use: WHERE trade_date >= date('now', '-N days') or ORDER BY trade_date DESC LIMIT N
-4. For "52-week high/low", query price_history for the last 365 days
+4. For "52-week high/low", anchor the 365-day window to the symbol's latest available trade_date, not date('now')
 5. All monetary values are in NPR unless stated otherwise
 6. Return only the SQL query. No explanation. No markdown. No backticks.
 """
@@ -61,7 +61,7 @@ SQL: SELECT c.symbol, c.name, d.cash_dividend, d.fiscal_year FROM dividends d JO
 
 EXAMPLE 3 — Price history aggregation (52-week range):
 Question: What is the 52-week high and low for NABIL Bank?
-SQL: SELECT symbol, MAX(high_price) as week52_high, MIN(low_price) as week52_low FROM price_history WHERE symbol = 'NABIL' AND trade_date >= date('now', '-365 days')
+SQL: WITH ref AS (SELECT MAX(trade_date) AS max_date FROM price_history WHERE symbol = 'NABIL') SELECT MIN(low_price) AS low_52w, MAX(high_price) AS high_52w FROM price_history, ref WHERE symbol = 'NABIL' AND trade_date > date(max_date, '-365 day')
 
 EXAMPLE 4 — Cross-sector turnover comparison:
 Question: Which sector has had the highest average daily turnover over the last 30 trading days?

@@ -105,6 +105,106 @@ class PipelineContractTests(unittest.TestCase):
             pipeline.llm.call = orig_llm_call
             pipeline._build_symbol_metric_fallback = orig_fallback
 
+    def test_sql_empty_rows_uses_price_range_fallback(self) -> None:
+        orig_classify = pipeline.classify
+        orig_generate = pipeline.generate_and_execute
+        orig_llm_call = pipeline.llm.call
+        orig_price_fallback = pipeline._build_symbol_price_range_fallback
+        try:
+            pipeline.classify = lambda q: {
+                "route": "SQL",
+                "guardrail": None,
+                "language": "en",
+                "entities": {"symbol": "NFS", "metric": "price_range"},
+                "confidence": "high",
+            }
+            pipeline.generate_and_execute = lambda q: {
+                "success": True,
+                "question": q,
+                "sql": "SELECT ...",
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "attempts": 1,
+                "error": None,
+            }
+            pipeline._build_symbol_price_range_fallback = lambda query, language, entities: {
+                "answer": "The 52-week high for NFS is 851.00 and the 52-week low is 576.00.",
+                "sql": "SELECT range",
+                "sql_rows": [
+                    {
+                        "symbol": "NFS",
+                        "latest_trade_date": "2026-04-10",
+                        "high_52w": 851.0,
+                        "low_52w": 576.0,
+                    }
+                ],
+            }
+            pipeline.llm.call = lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("LLM synthesis should not run when fallback is used")
+            )
+
+            out = pipeline.run("what is 52 week high and low of NFS")
+            self.assertTrue(out.get("success"))
+            self.assertEqual(out.get("route"), "SQL")
+            self.assertIn("52-week high", out.get("answer", ""))
+            self.assertTrue(out.get("sql_rows"))
+        finally:
+            pipeline.classify = orig_classify
+            pipeline.generate_and_execute = orig_generate
+            pipeline.llm.call = orig_llm_call
+            pipeline._build_symbol_price_range_fallback = orig_price_fallback
+
+    def test_sql_null_price_range_row_uses_price_range_fallback(self) -> None:
+        orig_classify = pipeline.classify
+        orig_generate = pipeline.generate_and_execute
+        orig_llm_call = pipeline.llm.call
+        orig_price_fallback = pipeline._build_symbol_price_range_fallback
+        try:
+            pipeline.classify = lambda q: {
+                "route": "SQL",
+                "guardrail": None,
+                "language": "en",
+                "entities": {"symbol": "NFS", "metric": "price_range"},
+                "confidence": "high",
+            }
+            pipeline.generate_and_execute = lambda q: {
+                "success": True,
+                "question": q,
+                "sql": "SELECT symbol, MAX(high_price) AS week52_high, MIN(low_price) AS week52_low FROM price_history WHERE symbol='BAD'",
+                "rows": [{"week52_high": None, "week52_low": None}],
+                "columns": ["week52_high", "week52_low"],
+                "row_count": 1,
+                "attempts": 1,
+                "error": None,
+            }
+            pipeline._build_symbol_price_range_fallback = lambda query, language, entities: {
+                "answer": "The 52-week high for NFS is 851.00 and the 52-week low is 576.00.",
+                "sql": "SELECT range",
+                "sql_rows": [
+                    {
+                        "symbol": "NFS",
+                        "latest_trade_date": "2026-04-10",
+                        "high_52w": 851.0,
+                        "low_52w": 576.0,
+                    }
+                ],
+            }
+            pipeline.llm.call = lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("LLM synthesis should not run when fallback is used")
+            )
+
+            out = pipeline.run("what is 52 week high and low of NFS")
+            self.assertTrue(out.get("success"))
+            self.assertEqual(out.get("route"), "SQL")
+            self.assertIn("52-week high", out.get("answer", ""))
+            self.assertTrue(out.get("sql_rows"))
+        finally:
+            pipeline.classify = orig_classify
+            pipeline.generate_and_execute = orig_generate
+            pipeline.llm.call = orig_llm_call
+            pipeline._build_symbol_price_range_fallback = orig_price_fallback
+
     def test_sql_error_uses_symbol_metric_fallback(self) -> None:
         orig_classify = pipeline.classify
         orig_generate = pipeline.generate_and_execute
