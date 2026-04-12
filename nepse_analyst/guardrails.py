@@ -43,21 +43,6 @@ _PREDICTION_KEYWORDS_NE = [
     "भविष्य मूल्य",
 ]
 
-_DISCLAIMER_EN = (
-    "\n\n---\n"
-    "⚠️ *This information is for research purposes only and does not constitute "
-    "financial advice. Past performance does not guarantee future results. "
-    "Please consult a SEBON-registered broker or financial advisor before "
-    "making any investment decisions.*"
-)
-
-_DISCLAIMER_NE = (
-    "\n\n---\n"
-    "⚠️ *यो जानकारी अनुसन्धान उद्देश्यका लागि मात्र हो र वित्तीय सल्लाह होइन। "
-    "कृपया कुनै पनि लगानी निर्णय गर्नु अघि SEBON-दर्ता दलाल वा वित्तीय सल्लाहकारसँग "
-    "परामर्श गर्नुहोस्।*"
-)
-
 
 # Detection functions
 
@@ -200,11 +185,9 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
                 "• Recent news and announcements"
             )
 
-    disclaimer = _DISCLAIMER_NE if lang == "ne" else _DISCLAIMER_EN
-
     return {
         "success": True,
-        "answer": message + disclaimer,
+        "answer": message,
         "route": "OOS",
         "guardrail_type": guardrail_type,
         "sql": None,
@@ -216,6 +199,5 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
 
 
 def append_disclaimer(text: str, language: str = "en") -> str:
-    """Append the financial disclaimer to any answer string."""
-    disclaimer = _DISCLAIMER_NE if language == "ne" else _DISCLAIMER_EN
-    return text + disclaimer
+    """Return answers unchanged (financial disclaimer injection disabled)."""
+    return text
