@@ -218,4 +218,3 @@ __pycache__/
 evaluation/results/*.json
 
 .vscode/
-nepse_analyst_prd.html
