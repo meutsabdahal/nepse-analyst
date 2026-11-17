@@ -7,23 +7,35 @@ import io
 
 from nepse_analyst.ingestion.parsing import (
     canonical_index_name,
-    first_non_null,
     http_get_json,
     http_get_text,
-    normalize_rows,
     price_bars_from_records,
     to_float,
     to_iso_date,
 )
 from nepse_analyst.ingestion.records import IndexBar, PriceBar
 
-COMPANY_WISE_URL = (
-    "https://api.github.com/repos/Aabishkar2/nepse-data/contents/data/company-wise"
-)
-INDEX_DAILY_URL = (
-    "https://api.github.com/repos/socrateai-official/nepse-open-data/contents/ohlc_index"
-)
+COMPANY_WISE_DIR = ("Aabishkar2/nepse-data", "data/company-wise")
+INDEX_DAILY_DIR = ("socrateai-official/nepse-open-data", "ohlc_index")
 DEFAULT_INDEX_TARGET_DAYS = {"NEPSE": 300, "Banking": 300, "Hydropower": 50}
+
+
+def list_github_dir(repo: str, path: str, ref: str = "HEAD") -> dict[str, str]:
+    """Return {file name: raw download URL} for every file directly under ``path``.
+
+    Uses the git trees API, not the contents API: the contents API silently
+    stops at 1,000 entries, which cut the daily index files off at 2007.
+    """
+    payload = http_get_json(
+        f"https://api.github.com/repos/{repo}/git/trees/{ref}:{path}", timeout=30
+    )
+    if payload.get("truncated"):
+        print(f"WARNING: GitHub tree listing for {repo}/{path} was truncated")
+    return {
+        entry["path"]: f"https://raw.githubusercontent.com/{repo}/{ref}/{path}/{entry['path']}"
+        for entry in payload.get("tree", [])
+        if entry.get("type") == "blob"
+    }
 
 
 class GitHubOpenDataSource:
@@ -31,39 +43,37 @@ class GitHubOpenDataSource:
 
     def __init__(
         self,
-        company_wise_url: str = COMPANY_WISE_URL,
-        index_daily_url: str = INDEX_DAILY_URL,
+        company_wise_dir: tuple[str, str] = COMPANY_WISE_DIR,
+        index_daily_dir: tuple[str, str] = INDEX_DAILY_DIR,
         index_target_days: dict[str, int] | None = None,
-        max_index_files: int = 120,
+        max_index_files: int = 400,
     ) -> None:
-        self.company_wise_url = company_wise_url
-        self.index_daily_url = index_daily_url
+        self.company_wise_dir = company_wise_dir
+        self.index_daily_dir = index_daily_dir
         self.index_target_days = index_target_days or dict(DEFAULT_INDEX_TARGET_DAYS)
+        # One file per trading day; must exceed the largest target or it is unreachable.
         self.max_index_files = max_index_files
         self._symbol_files: dict[str, str] | None = None
         self._index_files: list[str] | None = None
 
     def _symbol_file_map(self) -> dict[str, str]:
         if self._symbol_files is None:
-            mapping: dict[str, str] = {}
-            for item in normalize_rows(http_get_json(self.company_wise_url)):
-                name = str(first_non_null(item, ["name"], "")).strip()
-                url = first_non_null(item, ["download_url", "downloadUrl"])
-                if name.lower().endswith(".csv") and url:
-                    mapping[name[:-4].upper()] = str(url)
-            self._symbol_files = mapping
+            self._symbol_files = {
+                name[:-4].upper(): url
+                for name, url in list_github_dir(*self.company_wise_dir).items()
+                if name.lower().endswith(".csv")
+            }
         return self._symbol_files
 
     def _index_file_urls(self) -> list[str]:
         if self._index_files is None:
-            urls: list[str] = []
-            for item in normalize_rows(http_get_json(self.index_daily_url)):
-                name = str(first_non_null(item, ["name"], "")).strip()
-                url = first_non_null(item, ["download_url", "downloadUrl"])
-                if name.startswith("adj_") and name.endswith(".csv") and url:
-                    urls.append(str(url))
-            urls.sort(reverse=True)  # newest first, so we can stop early
-            self._index_files = urls
+            files = list_github_dir(*self.index_daily_dir)
+            # adj_YYYY-MM-DD.csv: reverse name order is newest first, so we can stop early.
+            self._index_files = [
+                files[name]
+                for name in sorted(files, reverse=True)
+                if name.startswith("adj_") and name.endswith(".csv")
+            ]
         return self._index_files
 
     def available(self) -> bool:

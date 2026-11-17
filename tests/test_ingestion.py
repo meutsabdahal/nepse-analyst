@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
@@ -15,8 +16,10 @@ from nepse_analyst.ingestion.records import (
     NewsArticle,
     PriceBar,
 )
+from nepse_analyst.ingestion.parsing import canonical_index_name
 from nepse_analyst.ingestion.sources.base import PriceSource
 from nepse_analyst.ingestion.sources.fallback import FallbackPriceSource
+from nepse_analyst.ingestion.sources.github_open_data import GitHubOpenDataSource
 from nepse_analyst.ingestion.sources.merolagani import (
     normalize_fiscal_year,
     parse_dividends,
@@ -200,6 +203,46 @@ class FallbackPriceSourceTests(unittest.TestCase):
         chain.available()
         with self.assertRaises(RuntimeError):
             chain.fetch_price_history("NABIL")
+
+
+class IndexNameTests(unittest.TestCase):
+    def test_exact_canonical_names(self):
+        self.assertEqual(canonical_index_name("NEPSE_index"), "NEPSE")
+        self.assertEqual(canonical_index_name("Banking_index"), "Banking")
+        self.assertEqual(canonical_index_name("HydroPower_index"), "Hydropower")
+        self.assertEqual(canonical_index_name("Hydro Power"), "Hydropower")
+
+    def test_other_sub_indices_are_not_aliased(self):
+        for name in ("Development%20Bank_index", "Microfinance_index", "Sensitive_index", "Float_index"):
+            self.assertIsNone(canonical_index_name(name), name)
+
+
+class GitHubListingTests(unittest.TestCase):
+    def test_index_files_newest_first_from_tree_listing(self):
+        tree = {
+            "truncated": False,
+            "tree": [
+                {"path": ".gitkeep", "type": "blob"},
+                {"path": "adj_2007-10-16.csv", "type": "blob"},
+                {"path": "adj_2026-11-06.csv", "type": "blob"},
+                {"path": "raw", "type": "tree"},
+            ],
+        }
+        with patch("nepse_analyst.ingestion.sources.github_open_data.http_get_json", return_value=tree) as get:
+            urls = GitHubOpenDataSource()._index_file_urls()
+
+        self.assertIn("/git/trees/HEAD:ohlc_index", get.call_args.args[0])
+        self.assertEqual(
+            urls,
+            [
+                "https://raw.githubusercontent.com/socrateai-official/nepse-open-data/HEAD/ohlc_index/adj_2026-11-06.csv",
+                "https://raw.githubusercontent.com/socrateai-official/nepse-open-data/HEAD/ohlc_index/adj_2007-10-16.csv",
+            ],
+        )
+
+    def test_default_scan_can_reach_index_targets(self):
+        source = GitHubOpenDataSource()
+        self.assertGreaterEqual(source.max_index_files, max(source.index_target_days.values()))
 
 
 class MerolaganiParserTests(unittest.TestCase):

@@ -8,7 +8,7 @@ import time
 from datetime import date, datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 from urllib.request import Request, urlopen
 
 from nepse_analyst.ingestion.records import PriceBar
@@ -171,17 +171,29 @@ def price_bars_from_records(symbol: str, items: list[Any]) -> list[PriceBar]:
     return bars
 
 
+_CANONICAL_INDEX_NAMES = {
+    "nepse": "NEPSE",
+    "all share": "NEPSE",
+    "banking": "Banking",
+    "bank": "Banking",
+    "hydropower": "Hydropower",
+    "hydro power": "Hydropower",
+    "hydro": "Hydropower",
+}
+
+
 def canonical_index_name(raw_name: Any) -> str | None:
+    """Map a provider index label to NEPSE / Banking / Hydropower, else None.
+
+    Exact match after normalization: substring matching would also map
+    "Development Bank_index" to Banking.
+    """
     if raw_name is None:
         return None
-    text = str(raw_name).strip().lower().replace("%20", " ")
-    if "bank" in text:
-        return "Banking"
-    if "hydro" in text:
-        return "Hydropower"
-    if "nepse" in text or "all share" in text:
-        return "NEPSE"
-    return None
+    text = unquote(str(raw_name)).strip().lower().replace("_", " ")
+    text = re.sub(r"\s+", " ", text)
+    text = text.removesuffix(" index")
+    return _CANONICAL_INDEX_NAMES.get(text)
 
 
 def _http_get(url: str, accept: str, timeout: float, retries: int) -> str:
