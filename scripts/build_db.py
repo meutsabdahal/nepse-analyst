@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the SQLite database schema for NEPSE Analyst."""
+"""Wrapper command for building the NEPSE Analyst database. See nepse_analyst/build_db.py."""
 
 from pathlib import Path
 import sys
@@ -7,10 +7,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from nepse_analyst.database import create_database
+from nepse_analyst.build_db import main
 
 
 if __name__ == "__main__":
-    print("Creating database schema...")
-    create_database()
-    print("Database schema created at data/processed/nepse.db")
+    main()

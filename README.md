@@ -95,8 +95,9 @@ Core package lives in `nepse_analyst/` and frontend assets live in `web/`.
 - `nepse_analyst/retriever.py`: ChromaDB retrieval.
 - `nepse_analyst/guardrails.py`: Advice/prediction rejection logic.
 - `scripts/evaluate_benchmark.py`: Benchmark runner.
-- `scripts/build_db.py`: Database schema build command.
-- `scripts/refresh_news.py`: News refresh command wrapper.
+- `nepse_analyst/ingestion/`: Data ingestion. `loader.py` is the single entry point; `sources/` holds one swappable class per upstream.
+- `scripts/build_db.py`: Builds the database and vector store via the ingestion loader.
+- `scripts/refresh_news.py`: Re-runs only the news step (scrape + re-index).
 
 ## Quick Start
 
@@ -126,22 +127,45 @@ Copy `.env.example` to `.env` and set values:
 - SQLite DB: `data/processed/nepse.db`
 - ChromaDB directory: `data/vector_store/`
 
-If DB schema is missing:
+Build both from scratch (scrapes several sites with polite delays; expect roughly 45 minutes on a cold cache):
 
 `uv run python scripts/build_db.py`
 
-For full ingestion/index refresh use notebooks:
-- `notebooks/ingest_companies.ipynb`
-- `notebooks/ingest_price_history.ipynb`
-- `notebooks/ingest_fundamentals.ipynb`
-- `notebooks/ingest_ipos.ipynb`
-- `notebooks/ingest_news.ipynb`
+Run a subset of steps, or create the schema only:
+
+`uv run python scripts/build_db.py --steps prices,indices`
+
+`uv run python scripts/build_db.py --schema-only`
+
+Steps run in this order: `companies`, `prices`, `indices`, `fundamentals`, `ipos`, `news`. Later steps read tables written by earlier ones (IPO listing prices come from `price_history`; news is tagged with symbols from `companies`).
 
 4. Run the app
 
 `uv run uvicorn app:app --reload`
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Data Sources
+
+All ingestion goes through `nepse_analyst.ingestion.Loader`. Sources only return normalized records (`ingestion/records.py`); the loader owns every database and vector-store write.
+
+| Data | Interface | Default source |
+| --- | --- | --- |
+| Companies | `CompanySource` | `KaggleCsvCompanySource` (`data/raw/nepse_companies_kaggle.csv`) |
+| Prices, indices | `PriceSource` | `FallbackPriceSource([NepseApiSource(), GitHubOpenDataSource()])` |
+| Fundamentals, dividends | `FundamentalsSource` | `MerolaganiSource` (HTML cached in `data/raw/news_cache/`) |
+| IPOs | `IPOSource` | `SharesansarIPOSource` |
+| News | `NewsSource` (list) | `SharesansarNewsSource`, `NepseAlphaNewsSource` |
+
+`NepseApiSource` wraps the unofficial NEPSE API (the `nepse-api` client, then the nepseapi.surajrimal.dev mirror). Neither is an official feed. To replace it, implement `PriceSource` (`available`, `fetch_price_history`, `fetch_index_history`) and pass it in:
+
+```python
+from nepse_analyst.ingestion import Loader, default_sources
+
+sources = default_sources()
+sources.prices = MyOfficialFeed()
+Loader(sources).run(["prices", "indices"])
+```
 
 ## API Endpoints
 

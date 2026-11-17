@@ -1,0 +1,282 @@
+"""Fundamentals and dividends scraped from merolagani.com company pages.
+
+Respectful scraping: pacing between requests and a local HTML cache, so
+re-runs only hit the network for symbols that have not been fetched yet.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlencode
+
+import requests
+from bs4 import BeautifulSoup
+
+from nepse_analyst.config import NEWS_CACHE_DIR, SCRAPE_DELAY_SEC
+from nepse_analyst.ingestion.parsing import extract_float, normalize_ws
+from nepse_analyst.ingestion.records import Dividend, Fundamental
+
+BASE_URL = "https://merolagani.com/CompanyDetail.aspx"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+FUNDAMENTAL_KEYWORDS = {
+    "eps": ["eps", "earning per share", "earnings per share"],
+    "pe_ratio": ["p/e", "p e ratio", "pe ratio", "price earnings"],
+    "book_value": ["book value", "book value per share", "bvps"],
+    "roe": ["roe", "return on equity"],
+    "net_profit": ["net profit", "profit after tax", "pat"],
+    "total_assets": ["total assets", "asset"],
+    "revenue": ["revenue", "turnover", "income"],
+}
+DIVIDEND_TABLE_HINTS = ["dividend", "bonus", "book close", "announced", "distribution"]
+_FUNDAMENTAL_FIELDS = list(FUNDAMENTAL_KEYWORDS)
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9%]+", " ", (text or "").lower()).strip()
+
+
+def _normalize_year_token(tok: str) -> int | None:
+    tok = tok.strip()
+    if not tok.isdigit():
+        return None
+    n = int(tok)
+    if len(tok) == 4:
+        return n
+    if len(tok) == 3:
+        return 2000 + n  # merolagani shorthand like 082-083 for 2082/83
+    if len(tok) == 2 and n >= 70:
+        return 2000 + n  # conservative: avoid Gregorian month false positives
+    return None
+
+
+def normalize_fiscal_year(text: str | None) -> str | None:
+    if not text:
+        return None
+    cleaned = normalize_ws(text)
+    m = re.search(r"(?:FY\s*[:\-]?\s*)?(\d{2,4})\s*[/\-]\s*(\d{2,4})", cleaned, flags=re.I)
+    if m:
+        left = _normalize_year_token(m.group(1))
+        right = _normalize_year_token(m.group(2))
+        if left is not None and right is not None:
+            return f"{left:04d}/{right % 100:02d}"
+    m2 = re.search(r"FY\s*[:\-]?\s*(\d{2,4})", cleaned, flags=re.I)
+    if m2:
+        left = _normalize_year_token(m2.group(1))
+        if left is not None:
+            return f"{left:04d}/{(left + 1) % 100:02d}"
+    return None
+
+
+def extract_fiscal_year_from_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    fy = normalize_fiscal_year(text)
+    if fy:
+        return fy
+    if "fy" in text.lower():
+        m = re.search(r"(\d{2,4}\s*[/\-]\s*\d{2,4})", text)
+        if m:
+            return normalize_fiscal_year(f"FY:{m.group(1)}")
+    return None
+
+
+def _metric_key(row_label: str) -> str | None:
+    s = slug(row_label)
+    for key, variants in FUNDAMENTAL_KEYWORDS.items():
+        if any(v in s for v in variants):
+            return key
+    return None
+
+
+def _table_matrix(table_tag: Any) -> tuple[list[str], list[list[str]]]:
+    matrix: list[list[str]] = []
+    for r in table_tag.find_all("tr"):
+        vals = [normalize_ws(c.get_text(" ", strip=True)) for c in r.find_all(["th", "td"])]
+        if any(vals):
+            matrix.append(vals)
+    if not matrix:
+        return [], []
+    return matrix[0], matrix[1:]
+
+
+def parse_fundamentals(soup: BeautifulSoup, symbol: str) -> list[Fundamental]:
+    by_fy: dict[str, dict[str, Any]] = {}
+    default_fy: str | None = None
+
+    # 1) Key/value rows in the main accordion summary table.
+    acc = soup.find("table", id="accordion")
+    if acc:
+        for tr in acc.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
+            if len(cells) < 2:
+                continue
+            label = normalize_ws(cells[0].get_text(" ", strip=True))
+            value_text = normalize_ws(cells[1].get_text(" ", strip=True))
+            mk = _metric_key(label)
+            if not mk:
+                continue
+            row_fy = extract_fiscal_year_from_text(value_text)
+            if mk == "eps" and row_fy:
+                default_fy = row_fy
+            fy = row_fy or default_fy
+            if not fy:
+                continue
+            by_fy.setdefault(fy, {})[mk] = extract_float(value_text)
+
+    # 2) Wide tables with one column per fiscal year.
+    for table in soup.find_all("table"):
+        header, body = _table_matrix(table)
+        if len(header) < 2:
+            continue
+        fiscal_cols = [
+            (idx, fy)
+            for idx, col in enumerate(header[1:], start=1)
+            if (fy := extract_fiscal_year_from_text(col))
+        ]
+        for _, fy in fiscal_cols:
+            by_fy.setdefault(fy, {})
+        for row in body:
+            if len(row) < 2:
+                continue
+            mk = _metric_key(row[0])
+            if not mk:
+                continue
+            for col_idx, fy in fiscal_cols:
+                if col_idx < len(row):
+                    val = extract_float(row[col_idx])
+                    if val is not None:
+                        by_fy[fy][mk] = val
+
+    return [
+        Fundamental(symbol=symbol, fiscal_year=fy, **{k: vals.get(k) for k in _FUNDAMENTAL_FIELDS})
+        for fy, vals in sorted(by_fy.items(), reverse=True)
+    ]
+
+
+def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
+    by_fy: dict[str, dict[str, Any]] = {}
+
+    def upsert(fy: str, field: str, val: Any) -> None:
+        rec = by_fy.setdefault(fy, {})
+        if val is not None:
+            rec[field] = val
+
+    acc = soup.find("table", id="accordion")
+    if acc:
+        # 1) Summary rows: "% Dividend", "% Bonus" with inline FY.
+        for tr in acc.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
+            if len(cells) < 2:
+                continue
+            label = slug(cells[0].get_text(" ", strip=True))
+            value_text = normalize_ws(cells[1].get_text(" ", strip=True))
+            fy = extract_fiscal_year_from_text(value_text)
+            if not fy:
+                continue
+            if "dividend" in label:
+                upsert(fy, "cash_dividend", extract_float(value_text))
+            elif "bonus" in label:
+                upsert(fy, "bonus_shares", extract_float(value_text))
+
+        # 2) Collapsed history panels.
+        for panel_id, field in (("dividend-panel", "cash_dividend"), ("bonus-panel", "bonus_shares")):
+            panel = acc.find("tr", id=panel_id)
+            if not panel:
+                continue
+            for r in panel.find_all("tr"):
+                vals = [normalize_ws(c.get_text(" ", strip=True)) for c in r.find_all(["th", "td"])]
+                if not vals or any(v.lower() in {"#", "value", "fiscal year"} for v in vals):
+                    continue
+                fy = None
+                num = None
+                for v in vals:
+                    fy = fy or extract_fiscal_year_from_text(v)
+                    if num is None and ("%" in v or re.search(r"\d", v)):
+                        num = extract_float(v)
+                if fy and num is not None:
+                    upsert(fy, field, num)
+
+    # 3) Generic dividend-like tables with FY/value columns.
+    for table in soup.find_all("table"):
+        table_text = slug(table.get_text(" ", strip=True))
+        if not any(hint in table_text for hint in DIVIDEND_TABLE_HINTS):
+            continue
+        header, body = _table_matrix(table)
+        if not header or not body:
+            continue
+        hdr = [slug(h) for h in header]
+
+        def col_index(*needles: str) -> int | None:
+            for i, name in enumerate(hdr):
+                if any(n in name for n in needles):
+                    return i
+            return None
+
+        fy_idx = col_index("fiscal year", "fy")
+        val_idx = col_index("value", "cash", "dividend", "bonus", "stock")
+        if fy_idx is None or val_idx is None:
+            continue
+        field = "bonus_shares" if "bonus" in table_text else "cash_dividend"
+        for row in body:
+            if fy_idx >= len(row) or val_idx >= len(row):
+                continue
+            fy = extract_fiscal_year_from_text(row[fy_idx])
+            if fy:
+                upsert(fy, field, extract_float(row[val_idx]))
+
+    return [
+        Dividend(symbol=symbol, fiscal_year=fy, **vals)
+        for fy, vals in sorted(by_fy.items(), reverse=True)
+    ]
+
+
+class MerolaganiSource:
+    name = "merolagani"
+
+    def __init__(
+        self,
+        cache_dir: str | Path = NEWS_CACHE_DIR,
+        delay_sec: float = SCRAPE_DELAY_SEC,
+        timeout_sec: float = 20,
+        force_refresh: bool = False,
+    ) -> None:
+        self.cache_dir = Path(cache_dir)
+        self.delay_sec = delay_sec
+        self.timeout_sec = timeout_sec
+        self.force_refresh = force_refresh
+        self._session = requests.Session()
+        self._last_request_ts: float | None = None
+
+    def fetch_html(self, symbol: str) -> str:
+        cache_path = self.cache_dir / f"merolagani_{symbol.upper()}.html"
+        if cache_path.exists() and not self.force_refresh:
+            return cache_path.read_text(encoding="utf-8", errors="ignore")
+
+        if self._last_request_ts is not None:
+            wait = self.delay_sec - (time.time() - self._last_request_ts)
+            if wait > 0:
+                time.sleep(wait)
+        url = f"{BASE_URL}?{urlencode({'symbol': symbol.upper()})}"
+        resp = self._session.get(url, headers=HEADERS, timeout=self.timeout_sec)
+        self._last_request_ts = time.time()
+        resp.raise_for_status()
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(resp.text, encoding="utf-8")
+        return resp.text
+
+    def fetch_fundamentals(self, symbol: str) -> tuple[list[Fundamental], list[Dividend]]:
+        soup = BeautifulSoup(self.fetch_html(symbol), "html.parser")
+        return parse_fundamentals(soup, symbol), parse_dividends(soup, symbol)
+
+    def close(self) -> None:
+        self._session.close()
