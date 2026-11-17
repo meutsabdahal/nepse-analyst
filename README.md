@@ -27,13 +27,18 @@ Pipeline PRD target checks: 2/4 met.
 How to read these numbers:
 - SQL scoring gives 1.0 for an exact row match, 0.5 for any non-empty result when the ground truth is also non-empty ("partial", regardless of whether the values are right), and 1.0 when both results are empty. The single "correct" case (Q6) is an empty-vs-empty match on a question the data cannot answer, so no generated query reproduced a non-empty ground-truth result exactly.
 - Ground-truth mode does not call the model for SQL; it only checks that the benchmark's reference SQL runs against the current database, so its SQL score is not a model accuracy metric.
-- Earlier versions of this README reported 12/12 pipeline SQL accuracy. That figure came from a lookup in `sql_generator.py` that returned the benchmark's ground-truth SQL whenever the input matched a benchmark question verbatim. The lookup has been removed; the numbers above are from the model alone.
 - Pipeline latency is dominated by local LLM inference (the first query includes model load, ~78 s). OOS and RAG cases do not call the SQL generator and stay well under 1 s.
 - Results come from a single run and depend on the scraped data snapshot, so expect variation between runs.
 
 Report files (written locally; `evaluation/results/` is gitignored):
 - `evaluation/results/report_pipeline_20261117_131010.json`
 - `evaluation/results/report_ground-truth_20261117_130557.json`
+
+### Evaluation integrity
+
+- **What leaked:** commit `99c9391` (2026-04-06) added `_SQL_OVERRIDES` to `nepse_analyst/sql_generator.py`. It loaded `evaluation/benchmark_questions.json` and, when a question matched a benchmark question verbatim, executed that case's `ground_truth_sql` instead of calling the LLM. Pipeline mode was therefore scoring the reference answers against themselves.
+- **How it was found:** code review of `sql_generator.py` showed the generator reading the benchmark file at runtime. The lookup was removed in `e5dee48`.
+- **Before vs. after:** pipeline SQL accuracy was reported as 12/12 (100.0%) on 2026-04-11 with the override in place, and measured 33.3% (1 correct, 6 partial, 5 incorrect) on 2026-11-17 without it. The two runs also differ in model (likely Groq `llama-3.1-8b-instant` vs. local `llama3.2:3b`) and data snapshot, so the gap is not due to the leak alone, but the 100% figure did not measure the model at all. OOS and RAG checks never used the override.
 
 ## What It Does
 
