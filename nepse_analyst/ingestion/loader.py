@@ -20,9 +20,9 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from nepse_analyst.config import BASE_DIR, DB_PATH, MAX_ARTICLES, NEWS_COLLECTION, VECTOR_STORE_DIR
+from nepse_analyst.config import DB_PATH, MAX_ARTICLES, NEWS_COLLECTION, VECTOR_STORE_DIR
 from nepse_analyst.database import FULL_SCHEMA_SQL
-from nepse_analyst.ingestion.records import Company, NewsArticle
+from nepse_analyst.ingestion.records import NewsArticle
 from nepse_analyst.ingestion.sources.base import (
     CompanySource,
     FundamentalsSource,

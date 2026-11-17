@@ -86,7 +86,7 @@ def search(
     if not results["ids"] or not results["ids"][0]:
         return passages
 
-    for i, doc_id in enumerate(results["ids"][0]):
+    for i in range(len(results["ids"][0])):
         metadata = results["metadatas"][0][i]
         distance = results["distances"][0][i]
         # ChromaDB cosine distance: 0 = identical, 2 = opposite
@@ -112,10 +112,6 @@ def search(
     passages.sort(key=lambda x: x["relevance_score"], reverse=True)
     return passages
 
-
-def search_by_symbol(symbol: str, top_k: int = TOP_K_RAG) -> list[dict]:
-
-    return search("", top_k=top_k, symbol_filter=symbol)
 
 
 def get_corpus_stats() -> dict:

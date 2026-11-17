@@ -27,9 +27,3 @@ def detect_language(text: str) -> str:
     
     # Mixed: significant Devanagari words mixed with English (common in NEPSE news)
     return "en"   # default for non-Devanagari non-English → treat as English
-
-def is_nepali(text: str) -> bool:
-    return detect_language(text) == "ne"
-
-def is_mixed(text: str) -> bool:
-    return detect_language(text) == "mixed"

@@ -214,18 +214,6 @@ def get_connection(read_only: bool = False):
     return conn
 
 
-def create_database():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.executescript(FULL_SCHEMA_SQL)  # combined CREATE TABLE + INDEX string
-        conn.commit()
-    finally:
-        if conn is not None:
-            conn.close()
-
-
 def execute_query(sql: str) -> dict:
     conn = None
     try:
@@ -259,27 +247,6 @@ def execute_query(sql: str) -> dict:
             "row_count": 0,
             "error": str(e),
         }
-    finally:
-        if conn is not None:
-            conn.close()
-
-
-def get_schema_summary() -> str:
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        tables = [r[0] for r in cursor.fetchall()]
-        lines = []
-        for table in tables:
-            cursor.execute(f"PRAGMA table_info({table})")
-            cols = cursor.fetchall()
-            col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
-            lines.append(f"{table}({col_defs})")
-        return "\n".join(lines)
     finally:
         if conn is not None:
             conn.close()

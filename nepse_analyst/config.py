@@ -34,7 +34,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "processed", "nepse.db")
 VECTOR_STORE_DIR = os.path.join(BASE_DIR, "data", "vector_store")
 NEWS_CACHE_DIR = os.path.join(BASE_DIR, "data", "raw", "news_cache")
-EVAL_DIR = os.path.join(BASE_DIR, "evaluation")
 
 # Retrieval Settings
 TOP_K_RAG = _env_int("TOP_K_RAG", 5)

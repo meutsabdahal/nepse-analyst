@@ -171,7 +171,7 @@ def classify(query: str) -> dict:
         if route not in _VALID_ROUTES:
             route = "SQL"  # safe fallback — SQL is the most common case
         confidence = "high"
-    except Exception as e:
+    except Exception:
         # LLM call failed — apply heuristic fallback routing
         route = _heuristic_route(query, language, entities)
         confidence = "low"
