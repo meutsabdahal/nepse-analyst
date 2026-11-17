@@ -4,27 +4,36 @@ A natural language research assistant for Nepal's retail investors.
 
 ## Benchmark Results (Front and Center)
 
-Latest benchmark run date: 2026-04-11.
+Latest benchmark run date: 2026-11-17.
+Pipeline LLM: local Ollama `llama3.2:3b`. Data: fresh scrape on 2026-11-17 (ingestion notebooks 01–05).
 
 | Metric | Pipeline Mode | Ground-Truth Mode |
 | --- | --- | --- |
-| SQL accuracy | 12/12 (100.0%) | 12/12 (100.0%) |
+| SQL accuracy (scored) | 4.0/12 (33.3%) | n/a (see note) |
+| SQL breakdown | 1 correct, 6 partial, 5 incorrect | 12/12 benchmark queries execute |
 | OOS guardrail accuracy | 10/10 (100.0%) | 10/10 (100.0%) |
-| RAG top-passage relevance | 10/10 relevant (100.0%) | 10/10 relevant (100.0%) |
-| RAG retrieval coverage | 10/10 retrieved (100.0%) | 10/10 retrieved (100.0%) |
-| Latency p95 | 465.13 ms | 436.60 ms |
-| Latency under 8s | 100.0% | 100.0% |
+| RAG top-passage relevance | 8/10 relevant (80.0%) | 8/10 relevant (80.0%) |
+| RAG retrieval coverage | 9/10 retrieved (90.0%) | 9/10 retrieved (90.0%) |
+| Latency p95 | 37,083.55 ms | 422.13 ms |
+| Latency under 8s | 71.9% | 100.0% |
 
-Pipeline PRD target checks: 4/4 met.
+Pipeline PRD target checks: 2/4 met.
 
-- Structured query accuracy target: met
-- OOS rejection target: met
-- RAG relevance target: met
-- Latency p95 under 8s target: met
+- Structured query accuracy target (≥75%): **not met** (33.3%)
+- OOS rejection target (≥90%): met
+- RAG relevance target (≥80%): met (exactly at threshold)
+- Latency p95 under 8s target: **not met** (37.1 s with a local 3B model)
 
-Latest report files:
-- [evaluation/results/report_pipeline_20260411_092046.json](evaluation/results/report_pipeline_20260411_092046.json)
-- [evaluation/results/report_ground-truth_20260411_092027.json](evaluation/results/report_ground-truth_20260411_092027.json)
+How to read these numbers:
+- SQL scoring gives 1.0 for an exact row match, 0.5 for any non-empty result when the ground truth is also non-empty ("partial", regardless of whether the values are right), and 1.0 when both results are empty. The single "correct" case (Q6) is an empty-vs-empty match on a question the data cannot answer, so no generated query reproduced a non-empty ground-truth result exactly.
+- Ground-truth mode does not call the model for SQL; it only checks that the benchmark's reference SQL runs against the current database, so its SQL score is not a model accuracy metric.
+- Earlier versions of this README reported 12/12 pipeline SQL accuracy. That figure came from a lookup in `sql_generator.py` that returned the benchmark's ground-truth SQL whenever the input matched a benchmark question verbatim. The lookup has been removed; the numbers above are from the model alone.
+- Pipeline latency is dominated by local LLM inference (the first query includes model load, ~78 s). OOS and RAG cases do not call the SQL generator and stay well under 1 s.
+- Results come from a single run and depend on the scraped data snapshot, so expect variation between runs.
+
+Report files (written locally; `evaluation/results/` is gitignored):
+- `evaluation/results/report_pipeline_20261117_131010.json`
+- `evaluation/results/report_ground-truth_20261117_130557.json`
 
 ## What It Does
 
@@ -147,7 +156,7 @@ Sample request:
 ## Evaluation
 
 Run benchmark in ground-truth mode:
-- Validates benchmark SQL against DB
+- Validates that benchmark reference SQL executes against the DB (does not exercise the model)
 - Runs OOS guardrail checks
 - Runs RAG retrieval relevance checks
 - Emits per-query latency summary
@@ -182,6 +191,7 @@ From current benchmark dataset snapshot:
 - Q3 is data_unavailable due to missing market_cap values.
 - Q6 is data_unavailable due to missing IPO oversubscription_rate values.
 - Q10 is data_unavailable due to missing microfinance fundamentals coverage.
+- Q5's reference SQL lists every non-null EPS row rather than filtering for 3 consecutive years of growth, so it does not answer its question; the 2026-11-17 scrape also has mostly one fiscal year of fundamentals per company.
 
 These are expected data coverage limitations and should be documented in evaluation results.
 
