@@ -333,17 +333,23 @@ def _is_top_passage_relevant(case: dict[str, Any], top_passage: dict[str, Any]) 
 
     expected_symbol = (case.get("expected_symbol") or "").strip().upper()
     if expected_symbol:
-        symbol_from_metadata = str(top_passage.get("symbol", "")).strip().upper()
+        tagged_symbols = {
+            str(s).strip().upper()
+            for s in (top_passage.get("symbols") or [top_passage.get("symbol", "")])
+        }
         symbol_in_text = expected_symbol.lower() in text_blob
-        if symbol_from_metadata != expected_symbol and not symbol_in_text:
+        if expected_symbol not in tagged_symbols and not symbol_in_text:
             return False
 
     expected_sector = (case.get("expected_sector") or "").strip().lower()
     if expected_sector:
-        sector_from_metadata = str(top_passage.get("sector", "")).strip().lower()
+        tagged_sectors = {
+            str(s).strip().lower()
+            for s in (top_passage.get("sectors") or [top_passage.get("sector", "")])
+        }
         sector_token = expected_sector.split()[0] if expected_sector else ""
         sector_in_text = sector_token in text_blob if sector_token else False
-        if sector_from_metadata != expected_sector and not sector_in_text:
+        if expected_sector not in tagged_sectors and not sector_in_text:
             return False
 
     expected_keywords = [
@@ -373,8 +379,8 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
             passages = search(
                 query=case["query"],
                 top_k=5,
-                symbol_filter=case.get("expected_symbol") or None,
-                sector_filter=case.get("expected_sector") or None,
+                boost_symbol=case.get("expected_symbol") or None,
+                boost_sector=case.get("expected_sector") or None,
             )
         except Exception as exc:
             passages = []

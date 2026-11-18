@@ -11,8 +11,12 @@ from nepse_analyst.config import (
     NEWS_COLLECTION,
     TOP_K_RAG,
     CORPUS_STATS_TTL_SEC,
+    RAG_CANDIDATE_MULTIPLIER,
+    RAG_SECTOR_BOOST,
+    RAG_SYMBOL_BOOST,
 )
 from nepse_analyst.embeddings import encode_query
+from nepse_analyst.news_tags import sector_key, split_tags, symbol_key
 
 _client = None
 _collection = None
@@ -27,26 +31,8 @@ def _get_collection():
     return _collection
 
 
-def _build_where_clause(
-    symbol_filter: str | None,
-    sector_filter: str | None,
-    language_filter: str | None,
-    article_type_filter: str | None,
-) -> dict | None:
-    """Build a ChromaDB-compatible where clause.
-
-    Chroma expects a single top-level operator when composing multiple predicates.
-    """
-    clauses = []
-    if symbol_filter:
-        clauses.append({"symbol": {"$eq": symbol_filter}})
-    if sector_filter:
-        clauses.append({"sector": {"$eq": sector_filter}})
-    if language_filter:
-        clauses.append({"language": {"$eq": language_filter}})
-    if article_type_filter:
-        clauses.append({"article_type": {"$eq": article_type_filter}})
-
+def _and(clauses: list[dict]) -> dict | None:
+    """Chroma expects a single top-level operator when composing predicates."""
     if not clauses:
         return None
     if len(clauses) == 1:
@@ -54,64 +40,90 @@ def _build_where_clause(
     return {"$and": clauses}
 
 
-def search(
-    query: str,
-    top_k: int = TOP_K_RAG,
-    symbol_filter: str = None,
-    sector_filter: str = None,
-    language_filter: str = None,
-    article_type_filter: str = None,
-) -> list[dict]:
-    collection = _get_collection()
-    query_embedding = encode_query(query).tolist()
+def _strict_clauses(language_filter: str | None, article_type_filter: str | None) -> list[dict]:
+    clauses = []
+    if language_filter:
+        clauses.append({"language": {"$eq": language_filter}})
+    if article_type_filter:
+        clauses.append({"article_type": {"$eq": article_type_filter}})
+    return clauses
 
-    where = _build_where_clause(
-        symbol_filter=symbol_filter,
-        sector_filter=sector_filter,
-        language_filter=language_filter,
-        article_type_filter=article_type_filter,
-    )
 
-    query_kwargs = {
-        "query_embeddings": [query_embedding],
-        "n_results": top_k,
+def _query(collection, embedding: list[float], n_results: int, where: dict | None) -> list[tuple]:
+    kwargs = {
+        "query_embeddings": [embedding],
+        "n_results": n_results,
         "include": ["documents", "metadatas", "distances"],
     }
     if where is not None:
-        query_kwargs["where"] = where
+        kwargs["where"] = where
+    res = collection.query(**kwargs)
+    if not res["ids"] or not res["ids"][0]:
+        return []
+    return list(zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]))
 
-    results = collection.query(**query_kwargs)
+
+def search(
+    query: str,
+    top_k: int = TOP_K_RAG,
+    boost_symbol: str | None = None,
+    boost_sector: str | None = None,
+    language_filter: str | None = None,
+    article_type_filter: str | None = None,
+) -> list[dict]:
+    """Semantic search over the news corpus.
+
+    ``boost_symbol``/``boost_sector`` rank articles tagged with that company
+    or sector higher; they do not exclude untagged articles, because tags
+    are incomplete (an article can discuss a company without naming it the
+    way the tagger expects). ``language_filter`` and ``article_type_filter``
+    are strict filters.
+    """
+    collection = _get_collection()
+    embedding = encode_query(query).tolist()
+    strict = _strict_clauses(language_filter, article_type_filter)
+    pool = max(top_k * RAG_CANDIDATE_MULTIPLIER, top_k)
+
+    boosts: list[tuple[str, float]] = []
+    if boost_symbol:
+        boosts.append((symbol_key(boost_symbol), RAG_SYMBOL_BOOST))
+    if boost_sector:
+        boosts.append((sector_key(boost_sector), RAG_SECTOR_BOOST))
+
+    # Untagged semantic candidates, plus the best tagged ones so a tagged
+    # article is considered even if it falls outside the untagged pool.
+    candidates: dict[str, tuple] = {}
+    for where in [_and(strict)] + [_and(strict + [{key: True}]) for key, _ in boosts]:
+        for row in _query(collection, embedding, pool, where):
+            candidates.setdefault(row[0], row)
 
     passages = []
-    if not results["ids"] or not results["ids"][0]:
-        return passages
-
-    for i in range(len(results["ids"][0])):
-        metadata = results["metadatas"][0][i]
-        distance = results["distances"][0][i]
-        # ChromaDB cosine distance: 0 = identical, 2 = opposite
-        # Convert to similarity score 0–1
+    for _id, document, metadata, distance in candidates.values():
+        # ChromaDB cosine distance: 0 = identical, 2 = opposite -> similarity 0..1
         relevance_score = 1 - (distance / 2)
-
+        matched = [key for key, _ in boosts if metadata.get(key) is True]
+        rank_score = relevance_score + sum(b for key, b in boosts if key in matched)
         passages.append(
             {
                 "title": metadata.get("title", ""),
-                "content": results["documents"][0][i],
+                "content": document,
                 "source": metadata.get("source", ""),
                 "symbol": metadata.get("symbol", ""),
                 "sector": metadata.get("sector", ""),
+                "symbols": split_tags(metadata.get("symbols")) or split_tags(metadata.get("symbol")),
+                "sectors": split_tags(metadata.get("sectors")) or split_tags(metadata.get("sector")),
                 "language": metadata.get("language", "en"),
                 "published_at": metadata.get("published_at", ""),
                 "article_type": metadata.get("article_type", ""),
                 "url": metadata.get("url", ""),
                 "relevance_score": round(relevance_score, 4),
+                "rank_score": round(rank_score, 4),
+                "tag_match": bool(matched),
             }
         )
 
-    # Sort by relevance descending (ChromaDB already does this, but be explicit)
-    passages.sort(key=lambda x: x["relevance_score"], reverse=True)
-    return passages
-
+    passages.sort(key=lambda x: x["rank_score"], reverse=True)
+    return passages[:top_k]
 
 
 def get_corpus_stats() -> dict:

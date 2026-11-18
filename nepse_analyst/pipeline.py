@@ -791,13 +791,13 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
 
 def _handle_rag(query: str, language: str, entities: dict) -> dict:
     """Execute the multilingual RAG pathway."""
-    # Use entity metadata for filtered retrieval when a symbol is detected
+    # Detected company/sector ranks matching articles higher; it does not filter.
     try:
         passages = search(
             query=query,
             top_k=TOP_K_RAG,
-            symbol_filter=entities.get("symbol") or None,
-            sector_filter=entities.get("sector") or None,
+            boost_symbol=entities.get("symbol") or None,
+            boost_sector=entities.get("sector") or None,
         )
     except Exception as e:
         answer = (

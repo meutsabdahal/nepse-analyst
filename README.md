@@ -147,7 +147,7 @@ Run a subset of steps, or create the schema only:
 
 `uv run python scripts/build_db.py --schema-only`
 
-Steps run in this order: `companies`, `prices`, `indices`, `fundamentals`, `ipos`, `news`. Later steps read tables written by earlier ones (IPO listing prices come from `price_history`; news is tagged with symbols from `companies`).
+Steps run in this order: `companies`, `prices`, `indices`, `fundamentals`, `ipos`, `news`. Later steps read tables written by earlier ones (IPO listing prices come from `price_history`; news is tagged with symbols from `companies`). An article gets every company it names, matched as a whole-word symbol or by company name, plus those companies' sectors. Search ranks articles tagged with the question's company (`RAG_SYMBOL_BOOST`, default 0.1) or sector (`RAG_SECTOR_BOOST`, default 0.05) higher, but does not filter out untagged ones. Articles indexed before this change have no tag keys and get no boost until the news step re-runs.
 
 4. Run the app
 

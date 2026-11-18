@@ -32,6 +32,7 @@ from nepse_analyst.config import (
 )
 from nepse_analyst.database import FULL_SCHEMA_SQL
 from nepse_analyst.ingestion.records import NewsArticle
+from nepse_analyst.news_tags import tag_metadata
 from nepse_analyst.ingestion.sources.base import (
     CompanySource,
     FundamentalsSource,
@@ -113,21 +114,113 @@ def classify_article(title: str) -> str:
     return "market"
 
 
-def enrich_article(article: NewsArticle, companies: Iterable[tuple[str, str, str]]) -> dict:
-    """Tag an article with the first company it mentions and build its doc id."""
-    symbol = sector = None
-    text_upper = (article.title + " " + article.content[:500]).upper()
-    for sym, name, sec in companies:
-        if sym in text_upper or name.upper() in text_upper:
-            symbol, sector = sym, sec
-            break
+# Trailing words dropped from a company's legal name before matching it in
+# text, so "Nabil Bank Limited" matches "Nabil Bank".
+_NAME_SUFFIX_WORDS = {
+    "limited", "ltd", "company", "co", "pvt", "private", "public", "inc",
+    "bittiya", "sanstha",
+}
+# When every remaining word is one of these, the short form is too generic
+# ("Nepal Insurance" would match "Nepal Insurance Authority"), so the full
+# legal name is required instead.
+_GENERIC_NAME_WORDS = {
+    "nepal", "national", "central", "bank", "finance", "insurance", "life",
+    "general", "laghubitta", "microfinance", "hydropower", "power", "energy",
+    "development", "investment", "hotel", "hotels",
+}
+# Text window scanned for company mentions: title plus the lead of the body.
+TAG_WINDOW_CHARS = 500
+
+
+class CompanyMatcher:
+    """Find every listed company an article mentions, as whole words.
+
+    Symbols match case-sensitively ("MEN" but not "INVESTMENT" or "men"),
+    names match case-insensitively on their core words ("Nabil Bank").
+    Debentures, bonds and promoter shares are not tagged.
+    """
+
+    def __init__(self, companies: Iterable[tuple[str, str, str]]) -> None:
+        self._sector: dict[str, str | None] = {}
+        symbol_alts: list[str] = []
+        name_patterns: list[tuple[re.Pattern[str], str]] = []
+        for symbol, name, sector in companies:
+            symbol = (symbol or "").strip().upper()
+            if len(symbol) < 2 or not is_equity_symbol(symbol):
+                continue
+            self._sector[symbol] = sector
+            symbol_alts.append(re.escape(symbol))
+            if core := self._core_name_pattern(name):
+                name_patterns.append((core, symbol))
+        # Longest first so "NICA" wins over "NIC" at the same position.
+        symbol_alts.sort(key=len, reverse=True)
+        self._symbol_re = (
+            re.compile(r"(?<![A-Za-z0-9])(" + "|".join(symbol_alts) + r")(?![A-Za-z0-9])")
+            if symbol_alts else None
+        )
+        self._name_patterns = name_patterns
+
+    @staticmethod
+    def _core_name_pattern(name: str | None) -> re.Pattern[str] | None:
+        full = re.findall(r"[a-z0-9]+", re.sub(r"\(.*?\)", " ", (name or "").lower()))
+        words = list(full)
+        while words and words[-1] in _NAME_SUFFIX_WORDS:
+            words.pop()
+        if words and all(w in _GENERIC_NAME_WORDS for w in words):
+            words = full
+        if len(words) < 2:  # a single word ("Nepal", "Api") is too ambiguous
+            return None
+        parts = [re.escape(w) for w in words]
+        if words[-1].endswith("s") and len(words[-1]) > 3:
+            parts[-1] = re.escape(words[-1][:-1]) + "s?"  # "Developers" ~ "Developer"
+        return re.compile(r"\b" + r"\W+".join(parts) + r"\b", re.IGNORECASE)
+
+    def match(self, text: str) -> list[str]:
+        """Symbols mentioned in ``text``, ordered by first mention."""
+        first_pos: dict[str, int] = {}
+        name_spans: list[tuple[int, int, str]] = []
+        for pattern, symbol in self._name_patterns:
+            for m in pattern.finditer(text):
+                name_spans.append((m.start(), m.end(), symbol))
+                first_pos[symbol] = min(first_pos.get(symbol, m.start()), m.start())
+        if self._symbol_re:
+            for m in self._symbol_re.finditer(text):
+                symbol = m.group(1)
+                # "NIC" inside "NIC Asia Bank" belongs to NICA, not to NIC.
+                if any(a <= m.start() and m.end() <= b and owner != symbol for a, b, owner in name_spans):
+                    continue
+                first_pos.setdefault(symbol, m.start())
+                first_pos[symbol] = min(first_pos[symbol], m.start())
+        return sorted(first_pos, key=lambda s: (first_pos[s], s))
+
+    def sector(self, symbol: str) -> str | None:
+        return self._sector.get(symbol)
+
+
+def enrich_article(
+    article: NewsArticle, companies: CompanyMatcher | Iterable[tuple[str, str, str]]
+) -> dict:
+    """Tag an article with every company it mentions and build its doc id.
+
+    ``symbol``/``sector`` hold the first-mentioned company; ``symbols`` and
+    ``sectors`` hold all of them in mention order.
+    """
+    matcher = companies if isinstance(companies, CompanyMatcher) else CompanyMatcher(companies)
+    symbols = matcher.match(article.title + "\n" + article.content[:TAG_WINDOW_CHARS])
+    sectors: list[str] = []
+    for sym in symbols:
+        sec = matcher.sector(sym)
+        if sec and sec not in sectors:
+            sectors.append(sec)
     url_hash = hashlib.md5(article.url.encode()).hexdigest()
     date_slug = article.published_at.replace("-", "") if article.published_at else "undated"
     return {
         "id": f"{article.source}_{date_slug}_{url_hash[:8]}",
         **asdict(article),
-        "symbol": symbol,
-        "sector": sector,
+        "symbol": symbols[0] if symbols else None,
+        "sector": sectors[0] if sectors else None,
+        "symbols": symbols,
+        "sectors": sectors,
         "article_type": classify_article(article.title),
     }
 
@@ -188,12 +281,14 @@ def index_news_in_chroma(docs: list[dict], vector_store_dir: str, collection_nam
                 {
                     "source": d["source"],
                     "title": d["title"],
-                    "symbol": d["symbol"] or "",
-                    "sector": d["sector"] or "",
                     "language": d["language"],
                     "published_at": d["published_at"],
                     "article_type": d["article_type"],
                     "url": d["url"],
+                    **tag_metadata(
+                        d.get("symbols") or ([d["symbol"]] if d.get("symbol") else []),
+                        d.get("sectors") or ([d["sector"]] if d.get("sector") else []),
+                    ),
                 }
                 for d in batch
             ],
@@ -606,12 +701,13 @@ class Loader:
         finally:
             conn.close()
 
+        matcher = CompanyMatcher(companies)
         docs: list[dict] = []
         per_source: dict[str, int] = {}
         for source in self.sources.news:
             articles = source.fetch_news(limit=self.max_articles)
             per_source[source.name] = len(articles)
-            docs.extend(enrich_article(a, companies) for a in articles)
+            docs.extend(enrich_article(a, matcher) for a in articles)
         docs = dedupe_by_title(docs)
         if not docs:
             raise RuntimeError("News ingestion produced zero documents; leaving the vector store untouched.")

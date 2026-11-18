@@ -37,6 +37,12 @@ NEWS_CACHE_DIR = os.path.join(BASE_DIR, "data", "raw", "news_cache")
 
 # Retrieval Settings
 TOP_K_RAG = _env_int("TOP_K_RAG", 5)
+RAG_CANDIDATE_MULTIPLIER = _env_int("RAG_CANDIDATE_MULTIPLIER", 4)  # candidates fetched per result
+# Added to cosine similarity (0..1) when an article is tagged with the
+# company / sector the query is about. Ranks tagged articles higher without
+# excluding untagged ones.
+RAG_SYMBOL_BOOST = float(os.getenv("RAG_SYMBOL_BOOST", "0.1"))
+RAG_SECTOR_BOOST = float(os.getenv("RAG_SECTOR_BOOST", "0.05"))
 NEWS_STALE_DAYS = _env_int("NEWS_STALE_DAYS", 30)
 MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
