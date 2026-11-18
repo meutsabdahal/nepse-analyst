@@ -97,14 +97,23 @@ def _number_forms(value: float) -> set[str]:
     return forms
 
 
-def answer_mentions(answer: str, expected_rows: list[dict], columns: list[str], max_rows: int = 20) -> bool | None:
+def answer_mentions(
+    answer: str,
+    expected_rows: list[dict],
+    columns: list[str],
+    max_rows: int = 20,
+    aliases: dict[str, list[str]] | None = None,
+) -> bool | None:
     """Whether the answer text states every key value of the reference rows.
 
+    ``aliases`` maps a string value to other acceptable spellings, e.g. a
+    symbol to its company name ("RBB" -> "Rastriya Banijya Bank").
     None when there is nothing to check (empty reference). Only the first
     ``max_rows`` rows are checked so long lists stay comparable.
     """
     if not expected_rows:
         return None
+    aliases = aliases or {}
     text = (answer or "").lower()
     for row in expected_rows[:max_rows]:
         for col in columns:
@@ -114,6 +123,8 @@ def answer_mentions(answer: str, expected_rows: list[dict], columns: list[str], 
             if _is_number(value):
                 if not any(form.lower() in text for form in _number_forms(float(value))):
                     return False
-            elif str(value).strip().lower() not in text:
-                return False
+            else:
+                forms = [str(value)] + aliases.get(str(value).strip().upper(), [])
+                if not any(f.strip().lower() in text for f in forms if f.strip()):
+                    return False
     return True

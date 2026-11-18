@@ -65,6 +65,14 @@ class AnswerMentionsTests(unittest.TestCase):
     def test_strings_case_insensitive(self):
         self.assertTrue(answer_mentions("manufacturing led with 61,481,070.51", [{"sector": "Manufacturing", "v": 61481070.51}], ["sector", "v"]))
 
+    def test_company_name_counts_for_symbol(self):
+        rows = [{"symbol": "RBB", "eps": 42.2}]
+        answer = "The highest EPS is Rastriya Banijya Bank Limited, with Rs. 42.20."
+        self.assertFalse(answer_mentions(answer, rows, ["symbol", "eps"]))
+        aliases = {"RBB": ["Rastriya Banijya Bank Limited", "Rastriya Banijya Bank"]}
+        self.assertTrue(answer_mentions(answer, rows, ["symbol", "eps"], aliases=aliases))
+        self.assertFalse(answer_mentions("Rastriya Banijya Bank, Rs. 40.00", rows, ["symbol", "eps"], aliases=aliases))
+
     def test_empty_reference_is_not_checked(self):
         self.assertIsNone(answer_mentions("anything", [], ["symbol"]))
 

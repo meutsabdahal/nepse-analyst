@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -301,10 +302,24 @@ def _sql_summary(rows: list) -> dict[str, Any]:
     }
 
 
+def company_aliases() -> dict[str, list[str]]:
+    """Symbol -> company name forms an answer may use instead of the symbol."""
+    res = execute_query("SELECT symbol, name FROM companies")
+    aliases: dict[str, list[str]] = {}
+    for row in res["rows"] if res["success"] else []:
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        short = re.sub(r"\s+(limited|ltd\.?|company limited|co\.? ltd\.?)$", "", name, flags=re.IGNORECASE)
+        aliases[str(row["symbol"]).upper()] = sorted({name, short})
+    return aliases
+
+
 def evaluate_e2e(benchmark: dict[str, Any]) -> tuple[list[E2ECaseResult], dict[str, Any]]:
     """pipeline.run() on each SQL question, scored on the rows behind the answer."""
     from nepse_analyst.pipeline import run as pipeline_run
 
+    aliases = company_aliases()
     rows: list[E2ECaseResult] = []
     for case in benchmark.get("sql_benchmark", []):
         expected, ref_error = _reference_rows(case)
@@ -319,7 +334,7 @@ def evaluate_e2e(benchmark: dict[str, Any]) -> tuple[list[E2ECaseResult], dict[s
         if expected is None:
             rows.append(E2ECaseResult(case["id"], request_id, case["question"], route,
                                       out.get("answer_source") or "", 0, len(actual_rows), False, 0.0,
-                                      "benchmark_invalid", None, answer[:400], out.get("sql"),
+                                      "benchmark_invalid", None, answer, out.get("sql"),
                                       ref_error, latency_ms))
             continue
 
@@ -334,8 +349,8 @@ def evaluate_e2e(benchmark: dict[str, Any]) -> tuple[list[E2ECaseResult], dict[s
         rows.append(E2ECaseResult(
             case["id"], request_id, case["question"], route, out.get("answer_source") or "",
             len(expected), len(actual_rows), strict, score, label,
-            answer_mentions(answer, expected, cols) if route != "OOS" else False,
-            answer[:400], out.get("sql"), out.get("error"), latency_ms,
+            answer_mentions(answer, expected, cols, aliases=aliases) if route != "OOS" else False,
+            answer, out.get("sql"), out.get("error"), latency_ms,
         ))
 
     summary = _sql_summary(rows)

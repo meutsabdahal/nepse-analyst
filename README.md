@@ -4,36 +4,46 @@ A natural language research assistant for Nepal's retail investors.
 
 ## Benchmark Results (Front and Center)
 
-Latest benchmark run date: 2026-11-18.
-Pipeline LLM: local Ollama `llama3.2:3b`. Data: scrape of 2026-11-17 (ingestion notebooks 01–05).
+Latest benchmark run: 2026-11-18. Pipeline LLM: local Ollama `llama3.2:3b`. Data: database built 2026-11-17 16:23 (includes the 2025–26 index history from `b110eb1`).
 
-| Metric | Pipeline Mode | Ground-Truth Mode |
+Pipeline mode now evaluates what a user gets: `pipeline.run()` on each SQL question (routing, keyword-triggered rule answers, generated SQL, written answer), plus the SQL generator alone for comparison.
+
+| Metric | Pipeline mode | Ground-truth mode |
 | --- | --- | --- |
-| SQL accuracy (scored) | 4.5/12 (37.5%) | n/a (see note) |
-| SQL breakdown | 1 correct, 7 partial, 4 incorrect | 12/12 benchmark queries execute |
-| OOS guardrail accuracy | 10/10 (100.0%) | 10/10 (100.0%) |
-| RAG top-passage relevance | 8/10 relevant (80.0%)* | 8/10 relevant (80.0%)* |
-| RAG retrieval coverage | 9/10 retrieved (90.0%)* | 9/10 retrieved (90.0%)* |
-| Latency p95 | 24,732.95 ms | 412.20 ms |
-| Latency under 8s | 84.4% | 100.0% |
+| SQL end to end, strict exact | **3/12** (2 with a non-empty reference: Q1, Q8; 1 empty: Q5) | n/a |
+| SQL end to end, lenient (legacy) | 3.5/12 (29.2%): 1 correct, 5 partial, 6 incorrect | n/a |
+| Answer text states the reference values | 1/8 (Q1) | n/a |
+| SQL generator alone, strict / lenient | 3/12 / 3.5/12 (same cases as end to end) | 12/12 reference queries execute |
+| Answer source | 12/12 generated SQL; rule answers never fired | n/a |
+| Must refuse (OOS) | 10/10 | 10/10 |
+| Must not refuse | **2/10** (8 refused by keyword guardrail) | 2/10 (keyword guardrail only) |
+| RAG top-passage relevance | 8/10* | 8/10* |
+| RAG retrieval coverage | 10/10* | 10/10* |
+| Latency per end-to-end SQL answer | p50 162 s, p95 266 s | n/a |
+| Latency p95, all cases | 235,858 ms | 423 ms |
 
-Pipeline PRD target checks: 2/4 met.
+Pipeline target checks: 2/5 met.
 
-- Structured query accuracy target (≥75%): **not met** (37.5%)
-- OOS rejection target (≥90%): met
-- RAG relevance target (≥80%): nominally met (exactly at threshold), but see the RAG caveat below
-- Latency p95 under 8s target: **not met** (24.7 s with a local 3B model)
+- Structured query accuracy (≥75%, end to end, strict): **not met** (25%)
+- OOS rejection (≥90%): met
+- Must-not-refuse (≥90%): **not met** (20%)
+- RAG relevance (≥80%): nominally met (exactly at threshold), but see the RAG caveat below
+- Latency p95 under 8 s: **not met**
 
 How to read these numbers:
-- SQL scoring gives 1.0 for an exact row match, 0.5 for any non-empty result when the ground truth is also non-empty ("partial", regardless of whether the values are right), and 1.0 when both results are empty. The single "correct" case (Q6) is an empty-vs-empty match on a question the data cannot answer, so no generated query reproduced a non-empty ground-truth result exactly.
+- **Strict exact** (`nepse_analyst/evaluation.py`): same row count as the reference, and each reference row's key values (`match_columns` in `evaluation/benchmark_questions.json`) appear in its own result row. Column names are ignored and numbers match within rounding. Q8's strict match is partly luck: its SQL ignores the "latest fiscal year" and the written answer misstates the value (6,445.1 for 6,645.1).
+- **Lenient** is the score the README used to report: 0.5 for *any* non-empty result when the reference is non-empty, whether or not the values are right. It is kept only for comparison with older reports.
+- **Answer text** checks that the final answer states every reference key value (a company name counts for its symbol). Of the 8 questions with a non-empty reference, only Q1's answer does. Failures include Q4 (queried `indices` instead of sectors), Q9 (all-time range, quoted in dollars) and several "no data found" answers.
+- **Rule answers:** `pipeline.py` has keyword-triggered SQL for dividend streaks and 52-week ranges, but these only run when the generated SQL fails or returns nothing, and none did in this run. `answer_source` in each report case shows which path answered.
+- **Must not refuse** (`allowed_benchmark`): questions such as "What should I know about P/E?" and Nepali questions containing "भोलि" (tomorrow). The keyword guardrail refuses them before the LLM router sees them. The guardrail has not been changed yet.
 - \*RAG numbers are not meaningful yet. They were measured on a 16-article corpus: the Sharesansar scraper re-read the first listing page on every request and collected site-menu links. Every article was also stamped 2016-12-15 from a site-wide meta tag, and NepseAlpha was unreachable. A passage also counts as "relevant" if it contains any one expected keyword (for example "bank"). The scraper and date parsing are fixed, and the news step now refuses a corpus this small or stale, but the vector store has not been rebuilt or re-measured since.
-- Ground-truth mode does not call the model for SQL; it only checks that the benchmark's reference SQL runs against the current database, so its SQL score is not a model accuracy metric.
-- Pipeline latency is dominated by local LLM inference (the first query includes model load, ~78 s). OOS and RAG cases do not call the SQL generator and stay well under 1 s.
-- Results come from a single run and depend on the scraped data snapshot, so expect variation between runs.
+- **Ground-truth mode** makes no model calls: it checks that the reference SQL runs, and checks must-not-refuse questions against the keyword guardrail only.
+- **Latency:** an end-to-end answer makes several local LLM calls (routing, SQL, answer writing; HYBRID routes also retrieve and summarise news). The SQL generator alone took 5–38 s per question.
+- Results come from a single run and depend on the data snapshot, so expect variation between runs. These numbers are not comparable with the earlier 37.5% figure: that was the lenient score of the SQL generator alone, before the prompt schema was generated from the database and before the Q2 and Q5 reference SQL was fixed.
 
 Report files (written locally; `evaluation/results/` is gitignored):
-- `evaluation/results/report_pipeline_20261118_134002.json`
-- `evaluation/results/report_ground-truth_20261118_133654.json`
+- `evaluation/results/report_pipeline_20261118_145609.json` (answer-text check rescored after adding company-name aliases)
+- `evaluation/results/report_ground-truth_20261118_141507.json`
 
 ### Evaluation integrity
 
@@ -41,12 +51,12 @@ Two leaks affected pipeline SQL scoring. Both are removed.
 
 - **Override lookup:** commit `99c9391` (2026-04-06) added `_SQL_OVERRIDES` to `nepse_analyst/sql_generator.py`. It loaded `evaluation/benchmark_questions.json` and, when a question matched a benchmark question verbatim, executed that case's `ground_truth_sql` instead of calling the LLM. Pipeline mode was therefore scoring the reference answers against themselves. Code review found the generator reading the benchmark file at runtime, and `e5dee48` removed the lookup.
 - **Few-shot examples:** the SQL prompt's worked examples (`nepse_analyst/prompts.py`) copied Q1, Q4, Q6 and Q9 word for word, and paraphrased Q3 (with "top 3" for "top 5"). The Q9 example's SQL was identical to its ground truth. `d39face` replaced all six examples with questions that are not in the benchmark. `tests/test_prompt_leakage.py` now fails if an example matches or closely paraphrases a benchmark question, if an example's SQL equals a ground-truth query, or if any benchmark question appears in the rendered prompt.
-- **Before vs. after:**
+- **Before vs. after** (lenient score of the SQL generator alone, the only score reported at the time):
   - 2026-04-11, with both leaks: 12/12 (100.0%). This figure did not measure the model at all. That run also used a different model (likely Groq `llama-3.1-8b-instant`) and data snapshot.
-  - 2026-11-17, override removed but leaked examples still in the prompt: 4.0/12 (33.3%).
-  - 2026-11-18, both removed: 4.5/12 (37.5%).
+  - 2026-11-17 13:10, override removed but leaked examples still in the prompt: 4.0/12 (33.3%).
+  - 2026-11-18 13:40, both removed: 4.5/12 (37.5%).
 
-  The last two runs use the same model and data. The leaked examples did not inflate the score: even Q9, whose exact reference SQL was in the prompt, scored only "partial" in the 33.3% run. With coarse scoring and one run each, the 0.5-point difference should not be read as an improvement.
+  These two runs used the same model but **not** the same data: the database was rebuilt at 16:23 on 2026-11-17, between them, which also replaced the index history (Q11's reference window moved from 2007 to 2025–26). The 0.5-point difference therefore says nothing about the leaked examples. Even Q9, whose exact reference SQL was in the prompt, scored only "partial" in the 33.3% run.
 - **Remaining prompt guidance:** the SQL prompt's schema section is generated from the live database (`nepse_analyst/schema_context.py`). Its rule 3 (anchor relative windows such as "52-week" to the latest date in the data) is general guidance, but it encodes the convention Q9's ground truth uses.
 - OOS and RAG checks never used either leak.
 
@@ -228,11 +238,13 @@ Troubleshooting (TestClient mismatch):
 
 ## Known Data Constraints
 
-From current benchmark dataset snapshot:
-- Q3 is data_unavailable due to missing market_cap values.
-- Q6 is data_unavailable due to missing IPO oversubscription_rate values.
-- Q10 is data_unavailable due to missing microfinance fundamentals coverage.
-- Q5's reference SQL lists every non-null EPS row rather than filtering for 3 consecutive years of growth, so it does not answer its question; the 2026-11-17 scrape also has mostly one fiscal year of fundamentals per company.
+From the 2026-11-17 database (reference results are snapshotted in `evaluation/benchmark_questions.json`; refresh with `uv run python scripts/evaluate_benchmark.py --refresh-snapshot`):
+- Q3 has an empty reference: `companies.market_cap` is NULL for every row.
+- Q6 has an empty reference: `ipos.oversubscription_rate` is NULL for every row.
+- Q10 has an empty reference: `fundamentals.roe` is NULL for every row.
+- Q5 has an empty reference: no company has EPS for three or more fiscal years. Its reference SQL was rewritten to check EPS rising across three consecutive fiscal years; previously it listed every EPS row. Q2's reference SQL had the same problem (raw dividend rows, streak check left to code that did not exist) and now returns the 23 hydropower companies with a 3+ year cash-dividend run.
+
+An empty reference is matched by an empty result, so these questions can be "correct" without the model answering anything. The report counts them separately (`strict_exact_empty_reference`).
 
 These are expected data coverage limitations and should be documented in evaluation results.
 
