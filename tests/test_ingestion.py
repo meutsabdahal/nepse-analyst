@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 from bs4 import BeautifulSoup
@@ -125,6 +126,8 @@ class LoaderTests(unittest.TestCase):
             db_path=self.db_path,
             vector_store_dir=os.path.join(self.tmp.name, "vs"),
             news_indexer=lambda docs, path, coll: self.indexed.extend(docs) or len(docs),
+            min_news_articles=1,
+            today=lambda: date(2026, 1, 10),
         )
 
     def tearDown(self):

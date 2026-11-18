@@ -4,41 +4,51 @@ A natural language research assistant for Nepal's retail investors.
 
 ## Benchmark Results (Front and Center)
 
-Latest benchmark run date: 2026-11-17.
-Pipeline LLM: local Ollama `llama3.2:3b`. Data: fresh scrape on 2026-11-17 (ingestion notebooks 01–05).
+Latest benchmark run date: 2026-11-18.
+Pipeline LLM: local Ollama `llama3.2:3b`. Data: scrape of 2026-11-17 (ingestion notebooks 01–05).
 
 | Metric | Pipeline Mode | Ground-Truth Mode |
 | --- | --- | --- |
-| SQL accuracy (scored) | 4.0/12 (33.3%) | n/a (see note) |
-| SQL breakdown | 1 correct, 6 partial, 5 incorrect | 12/12 benchmark queries execute |
+| SQL accuracy (scored) | 4.5/12 (37.5%) | n/a (see note) |
+| SQL breakdown | 1 correct, 7 partial, 4 incorrect | 12/12 benchmark queries execute |
 | OOS guardrail accuracy | 10/10 (100.0%) | 10/10 (100.0%) |
-| RAG top-passage relevance | 8/10 relevant (80.0%) | 8/10 relevant (80.0%) |
-| RAG retrieval coverage | 9/10 retrieved (90.0%) | 9/10 retrieved (90.0%) |
-| Latency p95 | 37,083.55 ms | 422.13 ms |
-| Latency under 8s | 71.9% | 100.0% |
+| RAG top-passage relevance | 8/10 relevant (80.0%)* | 8/10 relevant (80.0%)* |
+| RAG retrieval coverage | 9/10 retrieved (90.0%)* | 9/10 retrieved (90.0%)* |
+| Latency p95 | 24,732.95 ms | 412.20 ms |
+| Latency under 8s | 84.4% | 100.0% |
 
 Pipeline PRD target checks: 2/4 met.
 
-- Structured query accuracy target (≥75%): **not met** (33.3%)
+- Structured query accuracy target (≥75%): **not met** (37.5%)
 - OOS rejection target (≥90%): met
-- RAG relevance target (≥80%): met (exactly at threshold)
-- Latency p95 under 8s target: **not met** (37.1 s with a local 3B model)
+- RAG relevance target (≥80%): nominally met (exactly at threshold), but see the RAG caveat below
+- Latency p95 under 8s target: **not met** (24.7 s with a local 3B model)
 
 How to read these numbers:
 - SQL scoring gives 1.0 for an exact row match, 0.5 for any non-empty result when the ground truth is also non-empty ("partial", regardless of whether the values are right), and 1.0 when both results are empty. The single "correct" case (Q6) is an empty-vs-empty match on a question the data cannot answer, so no generated query reproduced a non-empty ground-truth result exactly.
+- \*RAG numbers are not meaningful yet. They were measured on a 16-article corpus: the Sharesansar scraper re-read the first listing page on every request and collected site-menu links. Every article was also stamped 2016-12-15 from a site-wide meta tag, and NepseAlpha was unreachable. A passage also counts as "relevant" if it contains any one expected keyword (for example "bank"). The scraper and date parsing are fixed, and the news step now refuses a corpus this small or stale, but the vector store has not been rebuilt or re-measured since.
 - Ground-truth mode does not call the model for SQL; it only checks that the benchmark's reference SQL runs against the current database, so its SQL score is not a model accuracy metric.
 - Pipeline latency is dominated by local LLM inference (the first query includes model load, ~78 s). OOS and RAG cases do not call the SQL generator and stay well under 1 s.
 - Results come from a single run and depend on the scraped data snapshot, so expect variation between runs.
 
 Report files (written locally; `evaluation/results/` is gitignored):
-- `evaluation/results/report_pipeline_20261117_131010.json`
-- `evaluation/results/report_ground-truth_20261117_130557.json`
+- `evaluation/results/report_pipeline_20261118_134002.json`
+- `evaluation/results/report_ground-truth_20261118_133654.json`
 
 ### Evaluation integrity
 
-- **What leaked:** commit `99c9391` (2026-04-06) added `_SQL_OVERRIDES` to `nepse_analyst/sql_generator.py`. It loaded `evaluation/benchmark_questions.json` and, when a question matched a benchmark question verbatim, executed that case's `ground_truth_sql` instead of calling the LLM. Pipeline mode was therefore scoring the reference answers against themselves.
-- **How it was found:** code review of `sql_generator.py` showed the generator reading the benchmark file at runtime. The lookup was removed in `e5dee48`.
-- **Before vs. after:** pipeline SQL accuracy was reported as 12/12 (100.0%) on 2026-04-11 with the override in place, and measured 33.3% (1 correct, 6 partial, 5 incorrect) on 2026-11-17 without it. The two runs also differ in model (likely Groq `llama-3.1-8b-instant` vs. local `llama3.2:3b`) and data snapshot, so the gap is not due to the leak alone, but the 100% figure did not measure the model at all. OOS and RAG checks never used the override.
+Two leaks affected pipeline SQL scoring. Both are removed.
+
+- **Override lookup:** commit `99c9391` (2026-04-06) added `_SQL_OVERRIDES` to `nepse_analyst/sql_generator.py`. It loaded `evaluation/benchmark_questions.json` and, when a question matched a benchmark question verbatim, executed that case's `ground_truth_sql` instead of calling the LLM. Pipeline mode was therefore scoring the reference answers against themselves. Code review found the generator reading the benchmark file at runtime, and `e5dee48` removed the lookup.
+- **Few-shot examples:** the SQL prompt's worked examples (`nepse_analyst/prompts.py`) copied Q1, Q4, Q6 and Q9 word for word, and paraphrased Q3 (with "top 3" for "top 5"). The Q9 example's SQL was identical to its ground truth. `d39face` replaced all six examples with questions that are not in the benchmark. `tests/test_prompt_leakage.py` now fails if an example matches or closely paraphrases a benchmark question, if an example's SQL equals a ground-truth query, or if any benchmark question appears in the rendered prompt.
+- **Before vs. after:**
+  - 2026-04-11, with both leaks: 12/12 (100.0%). This figure did not measure the model at all. That run also used a different model (likely Groq `llama-3.1-8b-instant`) and data snapshot.
+  - 2026-11-17, override removed but leaked examples still in the prompt: 4.0/12 (33.3%).
+  - 2026-11-18, both removed: 4.5/12 (37.5%).
+
+  The last two runs use the same model and data. The leaked examples did not inflate the score: even Q9, whose exact reference SQL was in the prompt, scored only "partial" in the 33.3% run. With coarse scoring and one run each, the 0.5-point difference should not be read as an improvement.
+- **Remaining prompt guidance:** rule 4 in `SCHEMA_CONTEXT` (anchor 52-week windows to the symbol's latest trade date) is general guidance, but it encodes the convention Q9's ground truth uses.
+- OOS and RAG checks never used either leak.
 
 ## What It Does
 
@@ -156,6 +166,8 @@ All ingestion goes through `nepse_analyst.ingestion.Loader`. Sources only return
 | Fundamentals, dividends | `FundamentalsSource` | `MerolaganiSource` (HTML cached in `data/raw/news_cache/`) |
 | IPOs | `IPOSource` | `SharesansarIPOSource` |
 | News | `NewsSource` (list) | `SharesansarNewsSource`, `NepseAlphaNewsSource` |
+
+The news step checks the scraped corpus before replacing the vector store. It fails, leaving the existing store in place, when there are fewer than `NEWS_MIN_ARTICLES` (default 50) articles after dedupe, when the newest article is older than `NEWS_MAX_NEWEST_AGE_DAYS` (default 14), or when more than half the articles have no parseable date. A source that returns nothing (NepseAlpha is often unreachable) prints a warning. Set `NEWS_ALLOW_THIN_CORPUS=1` to index anyway; the problems are still printed and returned in the step result.
 
 `NepseApiSource` wraps the unofficial NEPSE API (the `nepse-api` client, then the nepseapi.surajrimal.dev mirror). Neither is an official feed. To replace it, implement `PriceSource` (`available`, `fetch_price_history`, `fetch_index_history`) and pass it in:
 

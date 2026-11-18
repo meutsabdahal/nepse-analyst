@@ -18,9 +18,18 @@ import shutil
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
+from datetime import date, datetime
 from typing import Any
 
-from nepse_analyst.config import DB_PATH, MAX_ARTICLES, NEWS_COLLECTION, VECTOR_STORE_DIR
+from nepse_analyst.config import (
+    DB_PATH,
+    MAX_ARTICLES,
+    NEWS_ALLOW_THIN_CORPUS,
+    NEWS_COLLECTION,
+    NEWS_MAX_NEWEST_AGE_DAYS,
+    NEWS_MIN_ARTICLES,
+    VECTOR_STORE_DIR,
+)
 from nepse_analyst.database import FULL_SCHEMA_SQL
 from nepse_analyst.ingestion.records import NewsArticle
 from nepse_analyst.ingestion.sources.base import (
@@ -192,6 +201,54 @@ def index_news_in_chroma(docs: list[dict], vector_store_dir: str, collection_nam
     return collection.count()
 
 
+def news_corpus_problems(
+    docs: list[dict],
+    per_source: dict[str, int],
+    min_articles: int,
+    max_newest_age_days: int | None,
+    today: date,
+) -> tuple[list[str], list[str]]:
+    """(problems, warnings) for a scraped news corpus.
+
+    Problems block indexing; warnings are printed but do not.
+    """
+    problems: list[str] = []
+    warnings: list[str] = [
+        f"news source '{name}' returned 0 articles" for name, n in per_source.items() if n == 0
+    ]
+
+    if len(docs) < min_articles:
+        problems.append(f"only {len(docs)} articles after dedupe (minimum {min_articles})")
+
+    dates: list[date] = []
+    for d in docs:
+        try:
+            dates.append(datetime.strptime(d.get("published_at") or "", "%Y-%m-%d").date())
+        except ValueError:
+            continue
+    undated = len(docs) - len(dates)
+    if docs and undated * 2 > len(docs):
+        problems.append(f"{undated}/{len(docs)} articles have no parseable publish date")
+
+    if dates and max_newest_age_days is not None:
+        newest, oldest = max(dates), min(dates)
+        age = (today - newest).days
+        if age > max_newest_age_days:
+            problems.append(
+                f"newest article is from {newest} ({age} days old; limit {max_newest_age_days}); "
+                f"corpus spans {oldest}..{newest}"
+            )
+    return problems, warnings
+
+
+def _print_banner(lines: list[str]) -> None:
+    bar = "!" * 78
+    print(f"\n{bar}")
+    for line in lines:
+        print(f"!! {line}")
+    print(f"{bar}\n")
+
+
 class Loader:
     def __init__(
         self,
@@ -202,6 +259,10 @@ class Loader:
         processed_dir: str | None = None,
         max_articles: int | None = MAX_ARTICLES,
         news_indexer: Callable[[list[dict], str, str], int] = index_news_in_chroma,
+        min_news_articles: int = NEWS_MIN_ARTICLES,
+        max_news_newest_age_days: int | None = NEWS_MAX_NEWEST_AGE_DAYS,
+        allow_thin_news: bool = NEWS_ALLOW_THIN_CORPUS,
+        today: Callable[[], date] = date.today,
     ) -> None:
         self._sources = sources
         self.db_path = db_path
@@ -210,6 +271,10 @@ class Loader:
         self.processed_dir = processed_dir or os.path.dirname(db_path)
         self.max_articles = max_articles
         self.news_indexer = news_indexer
+        self.min_news_articles = min_news_articles
+        self.max_news_newest_age_days = max_news_newest_age_days
+        self.allow_thin_news = allow_thin_news
+        self.today = today
 
     @property
     def sources(self) -> Sources:
@@ -551,6 +616,20 @@ class Loader:
         if not docs:
             raise RuntimeError("News ingestion produced zero documents; leaving the vector store untouched.")
 
+        problems, warnings = news_corpus_problems(
+            docs, per_source, self.min_news_articles, self.max_news_newest_age_days, self.today()
+        )
+        if warnings:
+            _print_banner(["NEWS WARNING"] + warnings)
+        if problems:
+            summary = "; ".join(problems)
+            if not self.allow_thin_news:
+                _print_banner(["NEWS CORPUS REJECTED, vector store left untouched"] + problems
+                              + ["Set NEWS_ALLOW_THIN_CORPUS=1 to index it anyway."])
+                raise RuntimeError(f"News corpus failed health checks: {summary}")
+            _print_banner(["NEWS CORPUS IS THIN OR STALE, indexing anyway (NEWS_ALLOW_THIN_CORPUS)"]
+                          + problems)
+
         os.makedirs(self.processed_dir, exist_ok=True)
         with open(os.path.join(self.processed_dir, "all_docs.json"), "w", encoding="utf-8") as f:
             json.dump(docs, f, ensure_ascii=False, indent=2)
@@ -561,4 +640,10 @@ class Loader:
         if os.path.isdir(self.vector_store_dir):
             shutil.rmtree(backup, ignore_errors=True)
             shutil.copytree(self.vector_store_dir, backup)
-        return {"fetched": per_source, "documents": len(docs), "indexed": indexed}
+        return {
+            "fetched": per_source,
+            "documents": len(docs),
+            "indexed": indexed,
+            "health_problems": problems,
+            "health_warnings": warnings,
+        }

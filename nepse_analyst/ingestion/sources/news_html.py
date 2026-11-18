@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
@@ -27,11 +28,25 @@ _CONTENT_SELECTORS = (
     "div.news-content", "div.entry-content", "div.post-content", "div.text-justify",
     "section.main-content", "article .content", "article",
 )
-_DATE_SELECTORS = (
+# Dates shown on the page come first. Sharesansar's article:published_time
+# meta tag is a site-wide constant (2016-12-15), so meta tags are only used
+# after the visible date and the date in the URL slug.
+_VISIBLE_DATE_SELECTORS = (
+    "h5:has(> i.fa-calendar)",  # Sharesansar: "Wed, Nov 18, 2026 10:40 AM on ..."
     "span.news-date", "time", ".entry-date", "section.main-content time",
+)
+_META_DATE_SELECTORS = (
     "meta[property='article:published_time']", "meta[name='pubdate']",
 )
-_DATE_FORMATS = ("%Y-%m-%d", "%B %d, %Y", "%d %b %Y", "%d %B %Y", "%Y/%m/%d", "%a, %b %d, %Y")
+_DATE_PATTERNS = (
+    (re.compile(r"\d{4}-\d{2}-\d{2}"), ("%Y-%m-%d",)),
+    (re.compile(r"\d{4}/\d{2}/\d{2}"), ("%Y/%m/%d",)),
+    (re.compile(r"[A-Za-z]{3,9},? [A-Za-z]{3,9} \d{1,2},? \d{4}"),
+     ("%a, %b %d, %Y", "%A, %B %d, %Y", "%a, %B %d, %Y", "%A, %b %d, %Y")),
+    (re.compile(r"[A-Za-z]{3,9} \d{1,2},? \d{4}"), ("%B %d, %Y", "%b %d, %Y")),
+    (re.compile(r"\d{1,2} [A-Za-z]{3,9},? \d{4}"), ("%d %b %Y", "%d %B %Y", "%d %b, %Y", "%d %B, %Y")),
+)
+_URL_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})/?$")
 _NOISE = ("Login", "Register", "Contact Us", "Write For Us", "Home News", "Latest Share Price")
 
 
@@ -60,8 +75,6 @@ def extract_news_links(
             continue
         if path.rstrip("/") in ("", "/news", "/latest", "/announcement", "/news-page"):
             continue
-        if "sharesansar.com" in parsed.netloc and "/newsdetail/" not in path:
-            continue
         links.add(abs_url)
     return sorted(links)
 
@@ -72,6 +85,33 @@ def _first_match(soup: BeautifulSoup, selectors: tuple[str, ...]):
         if el:
             return el
     return None
+
+
+def parse_date_text(raw: str) -> str:
+    """First recognisable date in ``raw`` as YYYY-MM-DD, or ""."""
+    for pattern, formats in _DATE_PATTERNS:
+        for match in pattern.finditer(raw):
+            for fmt in formats:
+                try:
+                    return datetime.strptime(match.group(0), fmt).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+    return ""
+
+
+def extract_published_date(soup: BeautifulSoup, url: str) -> str:
+    for sel in _VISIBLE_DATE_SELECTORS:
+        for el in soup.select(sel):
+            if parsed := parse_date_text(el.get_text(" ", strip=True)):
+                return parsed
+    if m := _URL_DATE.search(urlparse(url).path):
+        if parsed := parse_date_text(m.group(1)):
+            return parsed
+    for sel in _META_DATE_SELECTORS:
+        for el in soup.select(sel):
+            if parsed := parse_date_text(el.get("content", "")):
+                return parsed
+    return ""
 
 
 def parse_article_html(html: str, url: str, source: str) -> NewsArticle | None:
@@ -90,17 +130,7 @@ def parse_article_html(html: str, url: str, source: str) -> NewsArticle | None:
     if len(content) < 80:
         return None
 
-    published_at = ""
-    date_el = _first_match(soup, _DATE_SELECTORS)
-    if date_el:
-        raw = date_el.get("content", "").strip() if date_el.name == "meta" else date_el.get_text(strip=True)
-        raw = raw.split("T")[0] if "T" in raw else raw
-        for fmt in _DATE_FORMATS:
-            try:
-                published_at = datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
-                break
-            except ValueError:
-                continue
+    published_at = extract_published_date(soup, url)
 
     try:
         from nepse_analyst.language_detector import detect_language

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -10,15 +12,12 @@ from bs4 import BeautifulSoup
 from nepse_analyst.config import SCRAPE_DELAY_SEC
 from nepse_analyst.ingestion.parsing import extract_float, extract_int
 from nepse_analyst.ingestion.records import IPOIssue, NewsArticle
-from nepse_analyst.ingestion.sources.news_html import (
-    HEADERS,
-    CachedArticleFetcher,
-    extract_news_links,
-)
+from nepse_analyst.ingestion.sources.news_html import HEADERS, CachedArticleFetcher
 
 EXISTING_ISSUES_URL = "https://www.sharesansar.com/existing-issues"
 IPO_RESULT_URL = "https://www.sharesansar.com/ipo-result"
-LATEST_NEWS_URL = "https://www.sharesansar.com/category/latest?page={page}"
+LATEST_NEWS_URL = "https://www.sharesansar.com/category/latest"
+LISTING_ITEM_SELECTOR = "div.featured-news-list a[href]"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
@@ -107,6 +106,15 @@ class SharesansarIPOSource:
 
 
 class SharesansarNewsSource:
+    """Walks the "Latest" category newest-first by following its cursor links.
+
+    The listing paginates with an opaque ``cursor`` query parameter exposed on
+    the ``rel="next"`` link; ``?page=N`` alone is ignored and always returns
+    the first page. Links are taken only from the main list
+    (``div.featured-news-list``) so the site menu's old evergreen articles are
+    not picked up.
+    """
+
     name = "sharesansar"
 
     def __init__(
@@ -114,46 +122,73 @@ class SharesansarNewsSource:
         max_pages: int = 100,
         delay_sec: float = SCRAPE_DELAY_SEC,
         fetcher: CachedArticleFetcher | None = None,
+        get_html: Callable[[str], str] | None = None,
     ) -> None:
         self.max_pages = max_pages
         self.delay_sec = delay_sec
         self.fetcher = fetcher or CachedArticleFetcher(delay_sec=delay_sec)
+        self._get_html = get_html or _http_get_html
 
-    def article_urls(self) -> list[str]:
-        urls: set[str] = set()
-        empty_streak = 0
-        for page in range(1, self.max_pages + 1):
-            listing_url = LATEST_NEWS_URL.format(page=page)
+    def article_urls(self, limit: int | None = None) -> list[str]:
+        urls: list[str] = []
+        seen: set[str] = set()
+        listing_url: str | None = LATEST_NEWS_URL
+        page = 0
+        while listing_url and page < self.max_pages:
+            page += 1
             try:
-                resp = requests.get(listing_url, headers=HEADERS, timeout=20)
-                resp.raise_for_status()
+                html = self._get_html(listing_url)
             except Exception as exc:
-                print(f"Sharesansar error on page {page}: {exc}")
-                time.sleep(self.delay_sec * 2)
-                continue
+                print(f"WARNING: Sharesansar listing page {page} failed ({exc}); stopping pagination.")
+                break
 
-            page_links = extract_news_links(
-                soup=BeautifulSoup(resp.text, "lxml"),
-                base_url=listing_url,
-                allowed_domains=("sharesansar.com",),
-                selectors=("a.news-title[href]", "h4 a[href]", "h3 a[href]", "article a[href]", ".media a[href]"),
-                path_keywords=("news", "detail", "article", "announcement"),
-            )
-            if page_links:
-                empty_streak = 0
-                urls.update(page_links)
-                print(f"Sharesansar page {page}: +{len(page_links)} links (total: {len(urls)})")
-            else:
-                empty_streak += 1
-                print(f"Sharesansar page {page}: 0 links")
-                if empty_streak >= 3:
-                    print("Stopping Sharesansar pagination after 3 empty pages.")
-                    break
-            time.sleep(self.delay_sec)
-        return sorted(urls)
+            soup = BeautifulSoup(html, "lxml")
+            page_links = parse_listing_links(soup, listing_url)
+            if not page_links:
+                if page == 1:
+                    raise RuntimeError(
+                        f"Sharesansar listing {listing_url} has no items under "
+                        f"'{LISTING_ITEM_SELECTOR}'; the page layout may have changed."
+                    )
+                print(f"WARNING: Sharesansar page {page} has no list items; stopping pagination.")
+                break
+
+            new_links = [u for u in page_links if u not in seen]
+            if not new_links:
+                print(f"WARNING: Sharesansar page {page} repeated earlier links; stopping pagination.")
+                break
+            seen.update(new_links)
+            urls.extend(new_links)
+            print(f"Sharesansar page {page}: +{len(new_links)} links (total: {len(urls)})")
+            if limit is not None and len(urls) >= limit:
+                break
+
+            listing_url = next_listing_url(soup, listing_url)
+            if listing_url:
+                time.sleep(self.delay_sec)
+        return urls[:limit] if limit is not None else urls
 
     def fetch_news(self, limit: int | None = None) -> list[NewsArticle]:
-        urls = self.article_urls()
-        if limit is not None:
-            urls = urls[:limit]
+        urls = self.article_urls(limit=limit)
         return [a for url in urls if (a := self.fetcher.fetch(url, self.name))]
+
+
+def parse_listing_links(soup: BeautifulSoup, base_url: str) -> list[str]:
+    """Article URLs from the main list, in page order (newest first)."""
+    links: list[str] = []
+    for a in soup.select(LISTING_ITEM_SELECTOR):
+        url = urljoin(base_url, (a.get("href") or "").strip())
+        if "/newsdetail/" in urlparse(url).path and url not in links:
+            links.append(url)
+    return links
+
+
+def next_listing_url(soup: BeautifulSoup, base_url: str) -> str | None:
+    nxt = soup.select_one("ul.pagination a[rel=next][href]") or soup.select_one("a[rel=next][href]")
+    return urljoin(base_url, nxt["href"]) if nxt else None
+
+
+def _http_get_html(url: str) -> str:
+    resp = requests.get(url, headers=HEADERS, timeout=20)
+    resp.raise_for_status()
+    return resp.text

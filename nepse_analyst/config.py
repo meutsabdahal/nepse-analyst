@@ -46,3 +46,10 @@ DB_BUSY_TIMEOUT_MS = _env_int("DB_BUSY_TIMEOUT_MS", 5000)
 # Scraping Settings
 SCRAPE_DELAY_SEC = _env_int("SCRAPE_DELAY_SEC", 3)  # minimum seconds between requests
 MAX_ARTICLES = _env_int("MAX_ARTICLES", 5000)  # cap on total news corpus size
+
+# News corpus health: the news step refuses to replace the vector store when the
+# scrape is too small, too old, or mostly undated. Set NEWS_ALLOW_THIN_CORPUS=1
+# to index anyway (a loud warning is still printed).
+NEWS_MIN_ARTICLES = _env_int("NEWS_MIN_ARTICLES", 50)
+NEWS_MAX_NEWEST_AGE_DAYS = _env_int("NEWS_MAX_NEWEST_AGE_DAYS", 14)  # newest article must be this recent
+NEWS_ALLOW_THIN_CORPUS = os.getenv("NEWS_ALLOW_THIN_CORPUS", "").strip().lower() in ("1", "true", "yes")
