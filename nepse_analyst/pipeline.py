@@ -618,6 +618,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
             "route": "SQL",
             "sql": coverage_fallback.get("sql"),
             "sql_rows": coverage_fallback.get("sql_rows", []),
+            "answer_source": "rule:dividend_sector_coverage",
             "passages": [],
             "query_language": language,
             "data_freshness": _get_db_freshness(),
@@ -637,6 +638,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": dividend_fallback.get("sql"),
                 "sql_rows": dividend_fallback.get("sql_rows", []),
+                "answer_source": "rule:dividend_streak",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -653,6 +655,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": price_range_fallback.get("sql"),
                 "sql_rows": price_range_fallback.get("sql_rows", []),
+                "answer_source": "rule:price_range_52w",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -667,6 +670,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": fallback.get("sql"),
                 "sql_rows": fallback.get("sql_rows", []),
+                "answer_source": "rule:latest_metric",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -690,6 +694,8 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
             "answer": append_disclaimer(answer, language),
             "route": "SQL",
             "sql": result.get("sql"),
+            "sql_rows": [],
+            "answer_source": "generated_sql_failed",
             "passages": [],
             "query_language": language,
             "data_freshness": _get_db_freshness(),
@@ -707,6 +713,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": dividend_fallback.get("sql"),
                 "sql_rows": dividend_fallback.get("sql_rows", []),
+                "answer_source": "rule:dividend_streak",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -723,6 +730,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": price_range_fallback.get("sql"),
                 "sql_rows": price_range_fallback.get("sql_rows", []),
+                "answer_source": "rule:price_range_52w",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -737,6 +745,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": fallback.get("sql"),
                 "sql_rows": fallback.get("sql_rows", []),
+                "answer_source": "rule:latest_metric",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -757,6 +766,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "route": "SQL",
                 "sql": price_range_fallback.get("sql"),
                 "sql_rows": price_range_fallback.get("sql_rows", []),
+                "answer_source": "rule:price_range_52w",
                 "passages": [],
                 "query_language": language,
                 "data_freshness": _get_db_freshness(),
@@ -782,6 +792,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         "route": "SQL",
         "sql": result["sql"],
         "sql_rows": result["rows"],
+        "answer_source": "generated_sql",
         "passages": [],
         "query_language": language,
         "data_freshness": _get_db_freshness(),
@@ -888,6 +899,7 @@ def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
         "route": "HYBRID",
         "sql": sql_result.get("sql"),
         "sql_rows": sql_result.get("sql_rows", []),
+        "answer_source": sql_result.get("answer_source"),
         "passages": rag_result.get("passages", []),
         "query_language": language,
         "data_freshness": f"{_get_db_freshness()} | {_get_news_freshness()}",
@@ -929,6 +941,8 @@ def run(query: str, request_id: str | None = None) -> dict:
         "guardrail_type": str|None, # 'prediction' | 'advice' | 'unknown' | None
         "sql":            str|None, # generated SQL (for transparency panel)
         "sql_rows":       list,     # raw rows (for transparency panel)
+        "answer_source":  str,      # what produced the answer: 'generated_sql', 'rule:<name>'
+                                    # (keyword-triggered SQL in this module), 'guardrail', 'rag', ...
         "passages":       list,     # retrieved news passages (for transparency panel)
         "query_language": str,      # 'en' | 'ne' | 'mixed'
         "data_freshness": str|None, # human-readable freshness string
@@ -971,6 +985,8 @@ def run(query: str, request_id: str | None = None) -> dict:
         decline_type = guardrail or "unknown"
         decline = build_decline_response(query, decline_type)
         decline["guardrail_type"] = decline_type
+        decline["answer_source"] = "guardrail"
+        decline.setdefault("sql_rows", [])
         logger.info(
             "route_short_circuit request_id=%s route=OOS guardrail_type=%s",
             request_id,
@@ -1024,4 +1040,5 @@ def run(query: str, request_id: str | None = None) -> dict:
     )
 
     result["guardrail_type"] = None
+    result.setdefault("answer_source", (result.get("route") or route or "").lower())
     return result

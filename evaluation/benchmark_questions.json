@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-03-25",
+    "generated_at": "2026-11-18",
     "source_db": "data/processed/nepse.db",
     "sql_benchmark": [
         {
@@ -11,13 +11,22 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "answer": "NABIL",
-                "value": 35.18,
-                "fiscal_year": "2082/83",
-                "unit": "NPR per share"
+                "snapshot_at": "2026-11-18",
+                "row_count": 1,
+                "rows": [
+                    {
+                        "symbol": "RBB",
+                        "eps": 42.2,
+                        "fiscal_year": "2083/84"
+                    }
+                ]
             },
             "ground_truth_sql": "SELECT c.symbol, f.eps, f.fiscal_year FROM fundamentals f JOIN companies c ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) ORDER BY f.eps DESC LIMIT 1",
-            "notes": "Merolagani cache check for NABIL EPS is consistent (35.18)."
+            "match_columns": [
+                "symbol",
+                "eps"
+            ],
+            "notes": "Latest fiscal year in fundamentals. The answer changes with each data refresh; see the ground_truth snapshot."
         },
         {
             "id": "Q2",
@@ -28,32 +37,85 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "count": 19,
-                "symbols": [
-                    "AHPC",
-                    "AKPL",
-                    "BGWT",
-                    "BHDC",
-                    "BPCL",
-                    "CHCL",
-                    "KPCL",
-                    "MEN",
-                    "MHL",
-                    "NGPL",
-                    "NHDL",
-                    "RADHI",
-                    "RHPC",
-                    "RURU",
-                    "SHPC",
-                    "SIKLES",
-                    "SMHL",
-                    "UMHL",
-                    "UMRH"
-                ],
-                "rule": "cash_dividend > 0 and at least one run of 3+ consecutive fiscal years"
+                "snapshot_at": "2026-11-18",
+                "row_count": 23,
+                "rows": [
+                    {
+                        "symbol": "AHPC"
+                    },
+                    {
+                        "symbol": "AKPL"
+                    },
+                    {
+                        "symbol": "API"
+                    },
+                    {
+                        "symbol": "BGWT"
+                    },
+                    {
+                        "symbol": "BHDC"
+                    },
+                    {
+                        "symbol": "BPCL"
+                    },
+                    {
+                        "symbol": "CHCL"
+                    },
+                    {
+                        "symbol": "KBSH"
+                    },
+                    {
+                        "symbol": "KPCL"
+                    },
+                    {
+                        "symbol": "MANDU"
+                    },
+                    {
+                        "symbol": "MEN"
+                    },
+                    {
+                        "symbol": "MHL"
+                    },
+                    {
+                        "symbol": "NGPL"
+                    },
+                    {
+                        "symbol": "NHDL"
+                    },
+                    {
+                        "symbol": "RADHI"
+                    },
+                    {
+                        "symbol": "RHPC"
+                    },
+                    {
+                        "symbol": "RURU"
+                    },
+                    {
+                        "symbol": "SHPC"
+                    },
+                    {
+                        "symbol": "SIKLES"
+                    },
+                    {
+                        "symbol": "SMH"
+                    },
+                    {
+                        "symbol": "SMHL"
+                    },
+                    {
+                        "symbol": "UMHL"
+                    },
+                    {
+                        "symbol": "UMRH"
+                    }
+                ]
             },
-            "ground_truth_sql": "SELECT d.symbol, d.fiscal_year FROM dividends d JOIN companies c ON c.symbol = d.symbol WHERE c.sector = 'Hydropower' AND COALESCE(d.cash_dividend,0) > 0 ORDER BY d.symbol, CAST(SUBSTR(d.fiscal_year,1,4) AS INT)",
-            "notes": "Consecutiveness is computed in evaluation code after SQL extraction."
+            "ground_truth_sql": "WITH paid AS (SELECT DISTINCT d.symbol, CAST(SUBSTR(d.fiscal_year,1,4) AS INT) AS fy_start FROM dividends d JOIN companies c ON c.symbol = d.symbol WHERE c.sector = 'Hydropower' AND COALESCE(d.cash_dividend,0) > 0), runs AS (SELECT symbol, fy_start - ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY fy_start) AS run_id FROM paid) SELECT DISTINCT symbol FROM runs GROUP BY symbol, run_id HAVING COUNT(*) >= 3 ORDER BY symbol",
+            "match_columns": [
+                "symbol"
+            ],
+            "notes": "A run of 3+ consecutive fiscal years with cash_dividend > 0 (gaps-and-islands on the fiscal-year start). The previous reference SQL returned raw (symbol, fiscal_year) rows and left the streak check to evaluation code that did not exist."
         },
         {
             "id": "Q3",
@@ -64,33 +126,18 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
+                "snapshot_at": "2026-11-18",
+                "row_count": 0,
+                "rows": [],
                 "status": "data_unavailable",
-                "reason": "companies.market_cap is NULL for all symbols in current snapshot",
-                "fallback_pe_sample_desc": [
-                    {
-                        "symbol": "NICA",
-                        "pe_ratio": 220.45
-                    },
-                    {
-                        "symbol": "ADBL",
-                        "pe_ratio": 62.1
-                    },
-                    {
-                        "symbol": "CZBIL",
-                        "pe_ratio": 49.74
-                    },
-                    {
-                        "symbol": "PRVU",
-                        "pe_ratio": 26.45
-                    },
-                    {
-                        "symbol": "SCB",
-                        "pe_ratio": 24.83
-                    }
-                ]
+                "reason": "companies.market_cap is NULL for all symbols in current snapshot"
             },
             "ground_truth_sql": "SELECT c.symbol, c.market_cap, f.pe_ratio FROM companies c JOIN fundamentals f ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND c.market_cap IS NOT NULL ORDER BY c.market_cap DESC LIMIT 5",
-            "notes": "Benchmark intent is valid; current DB cannot answer due to missing market cap values."
+            "match_columns": [
+                "symbol",
+                "pe_ratio"
+            ],
+            "notes": "Benchmark intent is valid; current DB cannot answer due to missing market cap values. companies.market_cap is NULL for all symbols in current snapshot."
         },
         {
             "id": "Q4",
@@ -101,12 +148,21 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "answer": "Hydropower",
-                "value": 97223987.79,
-                "unit": "NPR average turnover"
+                "snapshot_at": "2026-11-18",
+                "row_count": 1,
+                "rows": [
+                    {
+                        "sector": "Manufacturing",
+                        "avg_daily_turnover": 61481070.51
+                    }
+                ]
             },
             "ground_truth_sql": "WITH last_30_days AS (SELECT trade_date FROM price_history GROUP BY trade_date ORDER BY trade_date DESC LIMIT 30) SELECT c.sector, ROUND(AVG(p.turnover),2) AS avg_daily_turnover FROM price_history p JOIN companies c ON c.symbol = p.symbol WHERE p.trade_date IN (SELECT trade_date FROM last_30_days) GROUP BY c.sector ORDER BY avg_daily_turnover DESC LIMIT 1",
-            "notes": "Turnover dominance by Hydropower is plausible for this period."
+            "match_columns": [
+                "sector",
+                "avg_daily_turnover"
+            ],
+            "notes": "Average of per-row turnover over the 30 most recent trading dates in price_history."
         },
         {
             "id": "Q5",
@@ -116,12 +172,16 @@
             ],
             "difficulty": "hard",
             "ground_truth": {
-                "count": 0,
-                "symbols": [],
-                "rule": "strictly increasing EPS across consecutive fiscal years"
+                "snapshot_at": "2026-11-18",
+                "row_count": 0,
+                "rows": [],
+                "status": "data_unavailable"
             },
-            "ground_truth_sql": "SELECT symbol, fiscal_year, eps FROM fundamentals WHERE eps IS NOT NULL ORDER BY symbol, CAST(SUBSTR(fiscal_year,1,4) AS INT)",
-            "notes": "Consecutive-year growth detection is computed in evaluation code. Sparse fiscal coverage leads to zero matches."
+            "ground_truth_sql": "WITH yearly AS (SELECT symbol, CAST(SUBSTR(fiscal_year,1,4) AS INT) AS fy_start, eps FROM fundamentals WHERE eps IS NOT NULL), seq AS (SELECT symbol, fy_start, eps, LAG(eps,1) OVER w AS eps_prev1, LAG(fy_start,1) OVER w AS fy_prev1, LAG(eps,2) OVER w AS eps_prev2, LAG(fy_start,2) OVER w AS fy_prev2 FROM yearly WINDOW w AS (PARTITION BY symbol ORDER BY fy_start)) SELECT DISTINCT symbol FROM seq WHERE fy_prev1 = fy_start - 1 AND fy_prev2 = fy_start - 2 AND eps > eps_prev1 AND eps_prev1 > eps_prev2 ORDER BY symbol",
+            "match_columns": [
+                "symbol"
+            ],
+            "notes": "EPS strictly increasing across 3 consecutive fiscal years (two year-on-year increases). The previous reference SQL listed every non-null EPS row. No symbol has 3+ fiscal years of EPS in the 2026-11-17 data, so the reference result is empty."
         },
         {
             "id": "Q6",
@@ -131,11 +191,17 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
+                "snapshot_at": "2026-11-18",
+                "row_count": 0,
+                "rows": [],
                 "status": "data_unavailable",
                 "reason": "ipos.oversubscription_rate is NULL for all rows"
             },
             "ground_truth_sql": "SELECT symbol, company_name, oversubscription_rate FROM ipos WHERE oversubscription_rate IS NOT NULL ORDER BY oversubscription_rate DESC LIMIT 5",
-            "notes": "Need oversubscription enrichment from issue/applicant data source to make this benchmark answerable."
+            "match_columns": [
+                "symbol"
+            ],
+            "notes": "Need oversubscription enrichment from issue/applicant data source to make this benchmark answerable. ipos.oversubscription_rate is NULL for all rows."
         },
         {
             "id": "Q7",
@@ -146,20 +212,24 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "fiscal_year": "2080/81",
-                "comparison": [
+                "snapshot_at": "2026-11-18",
+                "row_count": 2,
+                "rows": [
                     {
                         "sector_group": "Hydropower",
-                        "total_bonus_shares": 19.5
+                        "total_bonus_shares": 24.5
                     },
                     {
                         "sector_group": "Banking",
-                        "total_bonus_shares": 7.5
+                        "total_bonus_shares": 12.37
                     }
-                ],
-                "winner": "Hydropower"
+                ]
             },
             "ground_truth_sql": "SELECT CASE WHEN c.sector IN ('Commercial Banks','Development Banks','Finance Companies') THEN 'Banking' WHEN c.sector = 'Hydropower' THEN 'Hydropower' END AS sector_group, ROUND(SUM(COALESCE(d.bonus_shares,0)),2) AS total_bonus_shares FROM dividends d JOIN companies c ON c.symbol = d.symbol WHERE d.fiscal_year = '2080/81' AND (c.sector IN ('Commercial Banks','Development Banks','Finance Companies') OR c.sector = 'Hydropower') GROUP BY sector_group ORDER BY total_bonus_shares DESC",
+            "match_columns": [
+                "sector_group",
+                "total_bonus_shares"
+            ],
             "notes": "Banking bucket includes Commercial Banks, Development Banks, and Finance Companies."
         },
         {
@@ -171,12 +241,21 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "answer": "RBB",
-                "value": 345.64,
-                "fiscal_year": "2082/83",
-                "unit": "NPR per share"
+                "snapshot_at": "2026-11-18",
+                "row_count": 1,
+                "rows": [
+                    {
+                        "symbol": "RBCL",
+                        "book_value": 6645.1,
+                        "fiscal_year": "2083/84"
+                    }
+                ]
             },
             "ground_truth_sql": "SELECT f.symbol, f.book_value, f.fiscal_year FROM fundamentals f WHERE f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND f.book_value IS NOT NULL ORDER BY f.book_value DESC LIMIT 1",
+            "match_columns": [
+                "symbol",
+                "book_value"
+            ],
             "notes": "Highest is based on latest fiscal year available in fundamentals table."
         },
         {
@@ -187,14 +266,21 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "symbol": "NABIL",
-                "high_52w": 562.0,
-                "low_52w": 471.0,
-                "unit": "NPR",
-                "window_rule": "last 365 days from latest available trade date for NABIL"
+                "snapshot_at": "2026-11-18",
+                "row_count": 1,
+                "rows": [
+                    {
+                        "low_52w": 485.0,
+                        "high_52w": 581.0
+                    }
+                ]
             },
             "ground_truth_sql": "WITH ref AS (SELECT MAX(trade_date) AS max_date FROM price_history WHERE symbol = 'NABIL') SELECT MIN(low_price) AS low_52w, MAX(high_price) AS high_52w FROM price_history, ref WHERE symbol = 'NABIL' AND trade_date > date(max_date, '-365 day')",
-            "notes": "Matches cached Merolagani value 562.00-471.00."
+            "match_columns": [
+                "low_52w",
+                "high_52w"
+            ],
+            "notes": "365-day window ending at NABIL's latest trade date in price_history."
         },
         {
             "id": "Q10",
@@ -205,11 +291,18 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
+                "snapshot_at": "2026-11-18",
+                "row_count": 0,
+                "rows": [],
                 "status": "data_unavailable",
-                "reason": "No microfinance symbols currently exist in fundamentals table"
+                "reason": "fundamentals.roe is NULL for every row"
             },
             "ground_truth_sql": "SELECT f.symbol, f.roe, f.fiscal_year FROM fundamentals f JOIN companies c ON c.symbol = f.symbol WHERE c.sector = 'Microfinance' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND f.roe IS NOT NULL ORDER BY f.roe DESC LIMIT 1",
-            "notes": "Requires fundamentals ingestion for microfinance universe."
+            "match_columns": [
+                "symbol",
+                "roe"
+            ],
+            "notes": "Requires fundamentals ingestion for microfinance universe. No microfinance symbols currently exist in fundamentals table."
         },
         {
             "id": "Q11",
@@ -219,24 +312,29 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "comparison": [
+                "snapshot_at": "2026-11-18",
+                "row_count": 2,
+                "rows": [
                     {
                         "index_name": "Banking",
-                        "start_date": "2007-04-19",
-                        "end_date": "2007-10-16",
-                        "pct_change": 115.89
+                        "start_date": "2025-11-09",
+                        "end_date": "2026-11-06",
+                        "pct_change": 17.47
                     },
                     {
                         "index_name": "NEPSE",
-                        "start_date": "2007-04-19",
-                        "end_date": "2007-10-16",
-                        "pct_change": 71.49
+                        "start_date": "2025-11-09",
+                        "end_date": "2026-11-06",
+                        "pct_change": 3.47
                     }
-                ],
-                "outperformed": "Banking"
+                ]
             },
             "ground_truth_sql": "WITH latest AS (SELECT MAX(trade_date) AS max_date FROM indices), windowed AS (SELECT i.index_name, i.trade_date, i.close_value FROM indices i, latest l WHERE i.trade_date > date(l.max_date, '-365 day') AND i.index_name IN ('NEPSE','Banking')), first_last AS (SELECT index_name, MIN(trade_date) AS start_date, MAX(trade_date) AS end_date FROM windowed GROUP BY index_name) SELECT f.index_name, f.start_date, f.end_date, ROUND((e.close_value - s.close_value) * 100.0 / s.close_value, 2) AS pct_change FROM first_last f JOIN windowed s ON s.index_name = f.index_name AND s.trade_date = f.start_date JOIN windowed e ON e.index_name = f.index_name AND e.trade_date = f.end_date ORDER BY f.index_name",
-            "notes": "Source index history is old in current snapshot; performance is mathematically correct for available window but not a current-year market view."
+            "match_columns": [
+                "index_name",
+                "pct_change"
+            ],
+            "notes": "Window is 365 days back from the latest index date. Before commit b110eb1 the index history stopped in 2007, so older reports compared 2007 values."
         },
         {
             "id": "Q12",
@@ -246,8 +344,9 @@
             ],
             "difficulty": "hard",
             "ground_truth": {
-                "count": 8,
-                "results": [
+                "snapshot_at": "2026-11-18",
+                "row_count": 12,
+                "rows": [
                     {
                         "symbol": "MEN",
                         "listing_premium_pct": 565.0
@@ -257,12 +356,28 @@
                         "listing_premium_pct": 465.0
                     },
                     {
+                        "symbol": "SLBSL",
+                        "listing_premium_pct": 405.0
+                    },
+                    {
                         "symbol": "GLH",
                         "listing_premium_pct": 279.0
                     },
                     {
                         "symbol": "NRN",
                         "listing_premium_pct": 274.0
+                    },
+                    {
+                        "symbol": "ILBS",
+                        "listing_premium_pct": 212.0
+                    },
+                    {
+                        "symbol": "ALBSL",
+                        "listing_premium_pct": 200.0
+                    },
+                    {
+                        "symbol": "GLBSL",
+                        "listing_premium_pct": 179.0
                     },
                     {
                         "symbol": "RHPL",
@@ -280,10 +395,13 @@
                         "symbol": "HURJA",
                         "listing_premium_pct": 60.0
                     }
-                ],
-                "window_rule": "3 years back from latest listing_date in ipos table"
+                ]
             },
             "ground_truth_sql": "WITH latest AS (SELECT MAX(listing_date) AS max_listing_date FROM ipos) SELECT symbol, ROUND((listing_price - issue_price) * 100.0 / issue_price, 2) AS listing_premium_pct FROM ipos, latest WHERE listing_date >= date(max_listing_date, '-3 year') AND issue_price IS NOT NULL AND listing_price IS NOT NULL AND listing_price >= issue_price * 1.5 ORDER BY listing_premium_pct DESC",
+            "match_columns": [
+                "symbol",
+                "listing_premium_pct"
+            ],
             "notes": "High IPO listing premiums in this period are plausible for NEPSE market conditions around 2019-2021 listings."
         }
     ],
@@ -435,6 +553,58 @@
             "id": "X10",
             "query": "Future price target of NABIL?",
             "expected": "prediction"
+        }
+    ],
+    "allowed_benchmark": [
+        {
+            "id": "A1",
+            "query": "What should I know about P/E?",
+            "trap": "'what should' (advice keyword)"
+        },
+        {
+            "id": "A2",
+            "query": "What should a beginner know about NEPSE trading hours?",
+            "trap": "'what should' (advice keyword)"
+        },
+        {
+            "id": "A3",
+            "query": "भोलि NEPSE बजार खुला हुन्छ?",
+            "trap": "'भोलि' (tomorrow) prediction keyword; asks whether the market is open tomorrow"
+        },
+        {
+            "id": "A4",
+            "query": "NABIL को बुक क्लोज भोलि हो?",
+            "trap": "'भोलि' prediction keyword; asks whether NABIL's book close is tomorrow"
+        },
+        {
+            "id": "A5",
+            "query": "Explain what a target price means in analyst reports.",
+            "trap": "'target price' prediction keyword; educational"
+        },
+        {
+            "id": "A6",
+            "query": "What does SEBON recommend to IPO applicants?",
+            "trap": "'recommend' advice keyword; asks about regulator guidance"
+        },
+        {
+            "id": "A7",
+            "query": "What is the difference between a forecast and a projection in an annual report?",
+            "trap": "'forecast' prediction keyword; educational"
+        },
+        {
+            "id": "A8",
+            "query": "सेयर मूल्य किन बढ्छ? यसका कारणहरू व्याख्या गर्नुहोस्।",
+            "trap": "'बढ्छ' (rises) prediction keyword; asks why share prices rise in general"
+        },
+        {
+            "id": "A9",
+            "query": "NABIL को EPS कति बढ्यो?",
+            "trap": "control: past tense 'बढ्यो' (increased)"
+        },
+        {
+            "id": "A10",
+            "query": "Is there an AGM tomorrow for any commercial bank?",
+            "trap": "control: 'tomorrow' in English, factual schedule question"
         }
     ]
 }

@@ -2,14 +2,23 @@
 """Run benchmark evaluation and save a JSON report.
 
 Modes:
-- ground-truth: validates benchmark SQL against the local database.
-- pipeline: runs model-powered SQL checks and full route checks.
+- ground-truth: checks that every reference query runs on the local database;
+  guardrail checks use the keyword guardrail only. No model calls.
+- pipeline: everything a user goes through, plus the SQL generator alone.
+  * sql:      generate_and_execute() on each SQL question (SQL generator only)
+  * e2e:      pipeline.run() on each SQL question: routing, keyword-triggered
+              rule answers, generated SQL, and the written answer
+  * oos:      questions that must be refused
+  * allowed:  questions that must NOT be refused (router incl. LLM)
+  * rag:      top-passage relevance and retrieval coverage
 
-Always reported:
-- SQL benchmark accuracy
-- OOS guardrail accuracy
-- RAG top-passage relevance
-- Per-query latency stats
+SQL scores are reported two ways (see nepse_analyst/evaluation.py):
+strict exact matches, and the legacy lenient score that gives half credit
+for any non-empty result.
+
+--refresh-snapshot rewrites each SQL case's ``ground_truth`` block from its
+reference SQL on the current database (scoring always re-runs the reference
+SQL; the snapshot is for readers of the JSON).
 """
 
 from __future__ import annotations
@@ -28,9 +37,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from nepse_analyst.database import execute_query
-from nepse_analyst.pipeline import run as pipeline_run
-from nepse_analyst.retriever import search
-from nepse_analyst.sql_generator import generate_and_execute
+from nepse_analyst.evaluation import answer_mentions, key_columns, lenient_score, strict_match
+from nepse_analyst.guardrails import get_guardrail_type
 
 BENCHMARK_PATH = ROOT / "evaluation" / "benchmark_questions.json"
 RESULTS_DIR = ROOT / "evaluation" / "results"
@@ -126,8 +134,41 @@ class SQLCaseResult:
     question: str
     expected_rows: int
     actual_rows: int | None
-    status: str
+    strict_match: bool
+    lenient_score: float
+    status: str  # lenient label: correct / partial / incorrect / benchmark_invalid / ground_truth_ok
     error: str | None
+    latency_ms: float
+    sql: str | None = None
+
+
+@dataclass
+class E2ECaseResult:
+    id: str
+    request_id: str
+    question: str
+    route: str
+    answer_source: str
+    expected_rows: int
+    actual_rows: int
+    strict_match: bool
+    lenient_score: float
+    status: str
+    answer_mentions_reference: bool | None
+    answer: str
+    sql: str | None
+    error: str | None
+    latency_ms: float
+
+
+@dataclass
+class AllowedCaseResult:
+    id: str
+    query: str
+    route: str
+    guardrail: str | None
+    passed: bool
+    checked_with: str  # "router" (keyword guardrail + LLM route) or "keyword-guardrail"
     latency_ms: float
 
 
@@ -202,100 +243,157 @@ def _build_latency_summary(samples_ms: list[float]) -> dict[str, float]:
     }
 
 
-def evaluate_sql(
-    mode: str, benchmark: dict[str, Any]
-) -> tuple[list[SQLCaseResult], float]:
+def _reference_rows(case: dict[str, Any]) -> tuple[list[dict] | None, str | None]:
+    res = execute_query(case["ground_truth_sql"])
+    if not res["success"]:
+        return None, res["error"]
+    return res["rows"], None
+
+
+def evaluate_sql(mode: str, benchmark: dict[str, Any]) -> tuple[list[SQLCaseResult], dict[str, Any]]:
+    """SQL generator only (no routing, no rule answers, no answer writing)."""
+    from nepse_analyst.sql_generator import generate_and_execute
+
     rows: list[SQLCaseResult] = []
-    score_sum = 0.0
-
     for case in benchmark.get("sql_benchmark", []):
-        case_id = case["id"]
-        question = case["question"]
-
-        expected_res = execute_query(case["ground_truth_sql"])
-        if not expected_res["success"]:
-            rows.append(
-                SQLCaseResult(
-                    id=case_id,
-                    question=question,
-                    expected_rows=0,
-                    actual_rows=None,
-                    status="benchmark_invalid",
-                    error=expected_res["error"],
-                    latency_ms=0.0,
-                )
-            )
+        expected, ref_error = _reference_rows(case)
+        if expected is None:
+            rows.append(SQLCaseResult(case["id"], case["question"], 0, None, False, 0.0,
+                                      "benchmark_invalid", ref_error, 0.0))
             continue
-
-        expected_rows = expected_res["rows"]
-        expected_count = expected_res["row_count"]
+        if mode == "ground-truth":
+            rows.append(SQLCaseResult(case["id"], case["question"], len(expected), len(expected),
+                                      True, 1.0, "ground_truth_ok", None, 0.0, case["ground_truth_sql"]))
+            continue
 
         start = time.perf_counter()
-        if mode == "ground-truth":
-            latency_ms = (time.perf_counter() - start) * 1000.0
-            rows.append(
-                SQLCaseResult(
-                    id=case_id,
-                    question=question,
-                    expected_rows=expected_count,
-                    actual_rows=expected_count,
-                    status="ground_truth_ok",
-                    error=None,
-                    latency_ms=round(latency_ms, 2),
-                )
-            )
-            score_sum += 1.0
+        actual = generate_and_execute(case["question"])
+        latency_ms = round((time.perf_counter() - start) * 1000.0, 2)
+        actual_rows = actual["rows"] if actual["success"] else None
+        score, label = lenient_score(expected, actual_rows)
+        strict = actual_rows is not None and strict_match(expected, actual_rows, key_columns(case, expected))
+        rows.append(SQLCaseResult(
+            case["id"], case["question"], len(expected),
+            len(actual_rows) if actual_rows is not None else 0,
+            strict, score, label, actual.get("error"), latency_ms, actual.get("sql"),
+        ))
+    return rows, _sql_summary(rows)
+
+
+def _sql_summary(rows: list) -> dict[str, Any]:
+    scored = [r for r in rows if r.status != "benchmark_invalid"]
+    total = len(rows)
+    strict = [r for r in scored if r.strict_match]
+    strict_nonempty = [r for r in strict if r.expected_rows > 0]
+    lenient = sum(r.lenient_score for r in scored)
+    labels: dict[str, int] = {}
+    for r in rows:
+        labels[r.status] = labels.get(r.status, 0) + 1
+    return {
+        "total": total,
+        "strict_exact": len(strict),
+        "strict_exact_nonempty_reference": len(strict_nonempty),
+        "strict_exact_empty_reference": len(strict) - len(strict_nonempty),
+        "strict_accuracy": round(len(strict) / max(total, 1), 4),
+        "lenient_score": round(lenient, 2),
+        "lenient_accuracy": round(lenient / max(total, 1), 4),
+        "lenient_labels": labels,
+    }
+
+
+def evaluate_e2e(benchmark: dict[str, Any]) -> tuple[list[E2ECaseResult], dict[str, Any]]:
+    """pipeline.run() on each SQL question, scored on the rows behind the answer."""
+    from nepse_analyst.pipeline import run as pipeline_run
+
+    rows: list[E2ECaseResult] = []
+    for case in benchmark.get("sql_benchmark", []):
+        expected, ref_error = _reference_rows(case)
+        request_id = f"eval:e2e:{case['id']}"
+        start = time.perf_counter()
+        out = pipeline_run(case["question"], request_id=request_id)
+        latency_ms = round((time.perf_counter() - start) * 1000.0, 2)
+
+        route = out.get("route") or ""
+        actual_rows = out.get("sql_rows") or []
+        answer = out.get("answer") or ""
+        if expected is None:
+            rows.append(E2ECaseResult(case["id"], request_id, case["question"], route,
+                                      out.get("answer_source") or "", 0, len(actual_rows), False, 0.0,
+                                      "benchmark_invalid", None, answer[:400], out.get("sql"),
+                                      ref_error, latency_ms))
             continue
 
-        actual = generate_and_execute(question)
-        latency_ms = (time.perf_counter() - start) * 1000.0
-
-        if not actual["success"]:
-            rows.append(
-                SQLCaseResult(
-                    id=case_id,
-                    question=question,
-                    expected_rows=expected_count,
-                    actual_rows=0,
-                    status="incorrect",
-                    error=actual.get("error"),
-                    latency_ms=round(latency_ms, 2),
-                )
-            )
-            continue
-
-        actual_rows = actual["rows"]
-        if _rows_equal(expected_rows, actual_rows):
-            status = "correct"
-            score_sum += 1.0
-        elif expected_count == 0 and actual["row_count"] == 0:
-            status = "correct"
-            score_sum += 1.0
-        elif actual["row_count"] > 0 and expected_count > 0:
-            status = "partial"
-            score_sum += 0.5
+        cols = key_columns(case, expected)
+        if route == "OOS":
+            strict, score, label = False, 0.0, "refused"
+        elif route not in ("SQL", "HYBRID") or not out.get("success"):
+            strict, score, label = False, 0.0, "incorrect"
         else:
-            status = "incorrect"
+            strict = strict_match(expected, actual_rows, cols)
+            score, label = lenient_score(expected, actual_rows)
+        rows.append(E2ECaseResult(
+            case["id"], request_id, case["question"], route, out.get("answer_source") or "",
+            len(expected), len(actual_rows), strict, score, label,
+            answer_mentions(answer, expected, cols) if route != "OOS" else False,
+            answer[:400], out.get("sql"), out.get("error"), latency_ms,
+        ))
 
-        rows.append(
-            SQLCaseResult(
-                id=case_id,
-                question=question,
-                expected_rows=expected_count,
-                actual_rows=actual["row_count"],
-                status=status,
-                error=None,
-                latency_ms=round(latency_ms, 2),
-            )
-        )
+    summary = _sql_summary(rows)
+    checked = [r for r in rows if r.answer_mentions_reference is not None]
+    summary["answer_mentions_reference"] = sum(1 for r in checked if r.answer_mentions_reference)
+    summary["answer_mentions_checked"] = len(checked)
+    sources: dict[str, int] = {}
+    for r in rows:
+        sources[r.answer_source] = sources.get(r.answer_source, 0) + 1
+    summary["answer_sources"] = sources
+    summary["routes"] = {route: sum(1 for r in rows if r.route == route) for route in sorted({r.route for r in rows})}
+    return rows, summary
 
-    accuracy = score_sum / max(len(rows), 1)
+
+def evaluate_allowed(mode: str, benchmark: dict[str, Any]) -> tuple[list[AllowedCaseResult], float]:
+    """Questions a user may legitimately ask; any refusal is a failure."""
+    rows: list[AllowedCaseResult] = []
+    for case in benchmark.get("allowed_benchmark", []):
+        start = time.perf_counter()
+        if mode == "ground-truth":
+            guardrail = get_guardrail_type(case["query"])
+            route, checked_with = ("OOS" if guardrail else "-"), "keyword-guardrail"
+        else:
+            from nepse_analyst.router import classify
+
+            routing = classify(case["query"])
+            route, guardrail, checked_with = routing["route"], routing.get("guardrail"), "router"
+        latency_ms = round((time.perf_counter() - start) * 1000.0, 2)
+        passed = route != "OOS" and not guardrail
+        rows.append(AllowedCaseResult(case["id"], case["query"], route, guardrail, passed, checked_with, latency_ms))
+    accuracy = sum(r.passed for r in rows) / max(len(rows), 1)
     return rows, accuracy
+
+
+def refresh_snapshot(benchmark: dict[str, Any]) -> None:
+    """Rewrite each SQL case's ground_truth block from its reference SQL."""
+    snapshot_at = datetime.now(timezone.utc).date().isoformat()
+    for case in benchmark.get("sql_benchmark", []):
+        rows, error = _reference_rows(case)
+        if rows is None:
+            raise RuntimeError(f"{case['id']} reference SQL failed: {error}")
+        old = case.get("ground_truth") or {}
+        block: dict[str, Any] = {"snapshot_at": snapshot_at, "row_count": len(rows), "rows": rows[:25]}
+        if not rows:
+            block["status"] = "data_unavailable"
+            if old.get("reason"):
+                block["reason"] = old["reason"]
+        case["ground_truth"] = block
+    benchmark["generated_at"] = snapshot_at
+    BENCHMARK_PATH.write_text(json.dumps(benchmark, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Refreshed ground_truth snapshots in {BENCHMARK_PATH}")
 
 
 def evaluate_oos(benchmark: dict[str, Any]) -> tuple[list[OOSCaseResult], float]:
     rows: list[OOSCaseResult] = []
     passed = 0
+
+    from nepse_analyst.pipeline import run as pipeline_run
 
     oos_cases = benchmark.get("oos_benchmark") or DEFAULT_OOS_BENCHMARK
     for case in oos_cases:
@@ -376,6 +474,8 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
         error: str | None = None
 
         try:
+            from nepse_analyst.retriever import search
+
             passages = search(
                 query=case["query"],
                 top_k=5,
@@ -428,36 +528,45 @@ def evaluate_rag(benchmark: dict[str, Any]) -> tuple[list[RAGCaseResult], float,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run NEPSE Analyst benchmark evaluation"
-    )
+    parser = argparse.ArgumentParser(description="Run NEPSE Analyst benchmark evaluation")
     parser.add_argument(
         "--mode",
         choices=["ground-truth", "pipeline"],
         default="ground-truth",
-        help="ground-truth validates DB benchmark SQL; pipeline runs model-powered SQL checks",
+        help="ground-truth validates reference SQL without model calls; pipeline runs the model end to end",
     )
     parser.add_argument(
         "--output",
         default="",
-        help="Output report path. Defaults to evaluation/results/report_<timestamp>.json",
+        help="Output report path. Defaults to evaluation/results/report_<mode>_<timestamp>.json",
+    )
+    parser.add_argument(
+        "--refresh-snapshot",
+        action="store_true",
+        help="Rewrite ground_truth blocks in the benchmark file from the current database, then exit",
     )
     args = parser.parse_args()
 
     benchmark = _load_benchmark()
+    if args.refresh_snapshot:
+        refresh_snapshot(benchmark)
+        return
 
-    sql_rows, sql_accuracy = evaluate_sql(args.mode, benchmark)
+    sql_rows, sql_summary = evaluate_sql(args.mode, benchmark)
+    e2e_rows, e2e_summary = evaluate_e2e(benchmark) if args.mode == "pipeline" else ([], None)
     oos_rows, oos_accuracy = evaluate_oos(benchmark)
+    allowed_rows, allowed_accuracy = evaluate_allowed(args.mode, benchmark)
     rag_rows, rag_relevance, rag_coverage = evaluate_rag(benchmark)
 
-    all_latency_samples = [r.latency_ms for r in sql_rows + oos_rows + rag_rows]
+    all_latency_samples = [r.latency_ms for r in sql_rows + e2e_rows + oos_rows + rag_rows]
     latency_summary = _build_latency_summary(all_latency_samples)
+    e2e_latency = _build_latency_summary([r.latency_ms for r in e2e_rows])
 
+    pipeline = args.mode == "pipeline"
     criteria = {
-        "structured_query_accuracy_target_met": (
-            sql_accuracy >= 0.75 if args.mode == "pipeline" else None
-        ),
+        "structured_query_accuracy_target_met": (e2e_summary["strict_accuracy"] >= 0.75) if pipeline else None,
         "oos_rejection_target_met": oos_accuracy >= 0.90,
+        "allowed_not_refused_target_met": allowed_accuracy >= 0.90,
         "rag_relevance_target_met": rag_relevance >= 0.80,
         "latency_p95_under_8s_met": latency_summary["p95_ms"] < 8000,
     }
@@ -465,15 +574,18 @@ def main() -> None:
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode,
-        "sql": {
-            "cases": [asdict(r) for r in sql_rows],
-            "accuracy": round(sql_accuracy, 4),
-            "total": len(sql_rows),
-        },
-        "oos": {
-            "cases": [asdict(r) for r in oos_rows],
-            "accuracy": round(oos_accuracy, 4),
-            "total": len(oos_rows),
+        "sql": {"scope": "SQL generator only" if pipeline else "reference SQL executes (no model)", **sql_summary, "cases": [asdict(r) for r in sql_rows]},
+        "e2e": (
+            {"scope": "pipeline.run(): routing, rule answers, generated SQL, answer",
+             **e2e_summary, "latency": e2e_latency, "cases": [asdict(r) for r in e2e_rows]}
+            if pipeline else None
+        ),
+        "oos": {"cases": [asdict(r) for r in oos_rows], "accuracy": round(oos_accuracy, 4), "total": len(oos_rows)},
+        "allowed": {
+            "cases": [asdict(r) for r in allowed_rows],
+            "accuracy": round(allowed_accuracy, 4),
+            "total": len(allowed_rows),
+            "refused": [r.id for r in allowed_rows if not r.passed],
         },
         "rag": {
             "cases": [asdict(r) for r in rag_rows],
@@ -495,11 +607,26 @@ def main() -> None:
         out_path = RESULTS_DIR / f"report_{args.mode}_{ts}.json"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    out_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+
+    def fmt(summary: dict[str, Any]) -> str:
+        return (
+            f"strict {summary['strict_exact']}/{summary['total']} "
+            f"({summary['strict_exact_nonempty_reference']} with a non-empty reference); "
+            f"lenient {summary['lenient_score']}/{summary['total']} ({summary['lenient_accuracy']:.1%})"
+        )
 
     print(f"Report written: {out_path}")
-    print(f"SQL accuracy: {report['sql']['accuracy']:.2%}")
-    print(f"OOS accuracy: {report['oos']['accuracy']:.2%}")
+    if pipeline:
+        print(f"SQL generator only: {fmt(sql_summary)}")
+    else:
+        print(f"Reference SQL executes: {sql_summary['strict_exact']}/{sql_summary['total']} (not a model score)")
+    if e2e_summary:
+        print(f"End to end:         {fmt(e2e_summary)}; answer states reference values "
+              f"{e2e_summary['answer_mentions_reference']}/{e2e_summary['answer_mentions_checked']}")
+        print(f"  answer sources: {e2e_summary['answer_sources']}")
+    print(f"OOS refused: {report['oos']['accuracy']:.2%}")
+    print(f"Allowed not refused: {report['allowed']['accuracy']:.2%} (refused: {report['allowed']['refused']})")
     print(f"RAG top passage relevance: {report['rag']['top_passage_relevance']:.2%}")
     print(f"Latency p95: {report['latency']['p95_ms']:.2f} ms")
 
