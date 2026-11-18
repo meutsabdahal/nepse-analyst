@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+
+
 SCHEMA_CONTEXT = """
 You are a SQLite expert. The database is called nepse.db and contains Nepal Stock Exchange (NEPSE) data.
 
@@ -50,31 +53,55 @@ IMPORTANT RULES:
 """
 
 
-FEW_SHOT_EXAMPLES = """
-EXAMPLE 1 — Simple fundamental lookup with sector filter:
-Question: Which commercial bank has the highest EPS in the latest fiscal year?
-SQL: SELECT c.symbol, c.name, f.eps, f.fiscal_year FROM fundamentals f JOIN companies c ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT MAX(fiscal_year) FROM fundamentals WHERE symbol IN (SELECT symbol FROM companies WHERE sector = 'Commercial Banks')) ORDER BY f.eps DESC LIMIT 1
+@dataclass(frozen=True)
+class SQLExample:
+    title: str
+    question: str
+    sql: str
 
-EXAMPLE 2 — Dividend history with consecutive year logic:
-Question: List all hydropower companies that paid cash dividends in fiscal year 2080/81.
-SQL: SELECT c.symbol, c.name, d.cash_dividend, d.fiscal_year FROM dividends d JOIN companies c ON d.symbol = c.symbol WHERE c.sector = 'Hydropower' AND d.fiscal_year = '2080/81' AND d.cash_dividend > 0 ORDER BY d.cash_dividend DESC
 
-EXAMPLE 3 — Price history aggregation (52-week range):
-Question: What is the 52-week high and low for NABIL Bank?
-SQL: WITH ref AS (SELECT MAX(trade_date) AS max_date FROM price_history WHERE symbol = 'NABIL') SELECT MIN(low_price) AS low_52w, MAX(high_price) AS high_52w FROM price_history, ref WHERE symbol = 'NABIL' AND trade_date > date(max_date, '-365 day')
+# Worked examples for the SQL prompt. These must not reuse questions (or
+# ground-truth SQL) from evaluation/benchmark_questions.json, otherwise the
+# benchmark measures recall of the prompt instead of SQL generation.
+# tests/test_prompt_leakage.py enforces this.
+SQL_EXAMPLES: tuple[SQLExample, ...] = (
+    SQLExample(
+        title="Fundamental ranking with sector filter (latest fiscal year)",
+        question="Which five hydropower companies have the lowest positive P/E ratio in the latest fiscal year?",
+        sql="SELECT c.symbol, c.name, f.pe_ratio, f.fiscal_year FROM fundamentals f JOIN companies c ON f.symbol = c.symbol WHERE c.sector = 'Hydropower' AND f.fiscal_year = (SELECT MAX(fiscal_year) FROM fundamentals) AND f.pe_ratio > 0 ORDER BY f.pe_ratio ASC LIMIT 5",
+    ),
+    SQLExample(
+        title="Dividend history for one company",
+        question="What cash dividends and bonus shares has NICA declared in each fiscal year?",
+        sql="SELECT fiscal_year, cash_dividend, bonus_shares FROM dividends WHERE symbol = 'NICA' ORDER BY fiscal_year DESC",
+    ),
+    SQLExample(
+        title="Price window anchored to the symbol's latest trade date",
+        question="What was the average closing price of UPPER over the last 90 days?",
+        sql="WITH ref AS (SELECT MAX(trade_date) AS max_date FROM price_history WHERE symbol = 'UPPER') SELECT ROUND(AVG(close_price), 2) AS avg_close_90d FROM price_history, ref WHERE symbol = 'UPPER' AND trade_date > date(max_date, '-90 day')",
+    ),
+    SQLExample(
+        title="Per-symbol aggregation over the last N trading days",
+        question="Which five stocks had the highest total traded volume over the last 10 trading days?",
+        sql="SELECT symbol, SUM(volume) AS total_volume FROM price_history WHERE trade_date IN (SELECT DISTINCT trade_date FROM price_history ORDER BY trade_date DESC LIMIT 10) GROUP BY symbol ORDER BY total_volume DESC LIMIT 5",
+    ),
+    SQLExample(
+        title="IPO lookup by sector",
+        question="List the hydropower IPOs that have listed, with their issue and listing prices.",
+        sql="SELECT symbol, company_name, issue_price, listing_price, listing_date FROM ipos WHERE status = 'listed' AND sector = 'Hydropower' ORDER BY listing_date DESC",
+    ),
+    SQLExample(
+        title="Latest index value",
+        question="What was the NEPSE index close on the most recent trading day?",
+        sql="SELECT trade_date, close_value, change_points, change_percent FROM indices WHERE index_name = 'NEPSE' ORDER BY trade_date DESC LIMIT 1",
+    ),
+)
 
-EXAMPLE 4 — Cross-sector turnover comparison:
-Question: Which sector has had the highest average daily turnover over the last 30 trading days?
-SQL: SELECT c.sector, AVG(ph.turnover) as avg_daily_turnover FROM price_history ph JOIN companies c ON ph.symbol = c.symbol WHERE ph.trade_date IN (SELECT DISTINCT trade_date FROM price_history ORDER BY trade_date DESC LIMIT 30) GROUP BY c.sector ORDER BY avg_daily_turnover DESC LIMIT 1
 
-EXAMPLE 5 — IPO oversubscription:
-Question: What are the top 5 most oversubscribed IPOs in NEPSE history?
-SQL: SELECT company_name, symbol, total_applicants, shares_issued, issue_price, listing_price FROM ipos WHERE status = 'listed' AND total_applicants IS NOT NULL ORDER BY total_applicants DESC LIMIT 5
-
-EXAMPLE 6 — EPS comparison across multiple companies (P/E by market cap):
-Question: What is the P/E ratio of the top 3 commercial banks by market capitalisation?
-SQL: SELECT c.symbol, c.name, c.market_cap, f.pe_ratio, f.fiscal_year FROM fundamentals f JOIN companies c ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT MAX(fiscal_year) FROM fundamentals) AND f.pe_ratio IS NOT NULL ORDER BY c.market_cap DESC LIMIT 3
-"""
+FEW_SHOT_EXAMPLES = "\n" + "\n\n".join(
+    f"EXAMPLE {i} — {ex.title}:\nQuestion: {ex.question}\nSQL: {ex.sql}"
+    for i, ex in enumerate(SQL_EXAMPLES, 1)
+) + "\n"
 
 
 def build_sql_prompt(question: str) -> str:
