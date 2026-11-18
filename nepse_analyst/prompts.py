@@ -1,56 +1,9 @@
 from dataclasses import dataclass
 
+from nepse_analyst.schema_context import get_schema_context
 
-SCHEMA_CONTEXT = """
-You are a SQLite expert. The database is called nepse.db and contains Nepal Stock Exchange (NEPSE) data.
 
-DATABASE SCHEMA:
-
-companies(symbol TEXT PRIMARY KEY, name TEXT, sector TEXT, listed_shares INTEGER, 
-          paid_up_value REAL, total_paid_up REAL, market_cap REAL, is_active INTEGER)
-  -- sector values: 'Commercial Banks', 'Hydropower', 'Life Insurance', 'Development Banks',
-  --                'Finance Companies', 'Microfinance', 'Non-Life Insurance', 'Hotels & Tourism',
-  --                'Manufacturing', 'Trading', 'Mutual Funds', 'Investment', 'Telecom', 'Others'
-
-price_history(id, symbol TEXT, trade_date TEXT, open_price REAL, high_price REAL,
-              low_price REAL, close_price REAL, volume INTEGER, turnover REAL)
-  -- trade_date is ISO string: '2026-03-10'
-  -- turnover is in NPR (Nepalese Rupees)
-
-fundamentals(id, symbol TEXT, fiscal_year TEXT, eps REAL, pe_ratio REAL, book_value REAL,
-             roe REAL, net_profit REAL, total_assets REAL, revenue REAL)
-  -- fiscal_year format: '2080/81' (Nepali fiscal year)
-  -- eps = earnings per share in NPR
-  -- book_value = book value per share in NPR
-  -- roe = return on equity as a percentage
-
-dividends(id, symbol TEXT, fiscal_year TEXT, cash_dividend REAL, bonus_shares REAL,
-          book_close_date TEXT, announced_date TEXT)
-  -- cash_dividend = percentage of face value (e.g. 15.0 means 15%)
-  -- bonus_shares = percentage stock dividend (e.g. 10.0 means 10%)
-
-ipos(id, symbol TEXT, company_name TEXT, sector TEXT, issue_date TEXT, listing_date TEXT,
-     issue_price REAL, listing_price REAL, shares_issued INTEGER, 
-     total_applicants INTEGER, status TEXT)
-  -- status: 'listed' | 'upcoming' | 'allotment'
-
-indices(id, trade_date TEXT, index_name TEXT, open_value REAL, close_value REAL,
-        change_points REAL, change_percent REAL, turnover REAL)
-  -- index_name values: 'NEPSE', 'Banking', 'Hydropower', 'Development Banks', 
-  --                    'Life Insurance', 'Manufacturing And Processing', 'Microfinance'
-
-FOREIGN KEYS: price_history.symbol → companies.symbol
-              fundamentals.symbol → companies.symbol
-              dividends.symbol → companies.symbol
-
-IMPORTANT RULES:
-1. Always use JOIN with companies table when filtering by sector
-2. For "latest fiscal year", use: WHERE fiscal_year = (SELECT MAX(fiscal_year) FROM fundamentals)
-3. For "last N trading days", use: WHERE trade_date >= date('now', '-N days') or ORDER BY trade_date DESC LIMIT N
-4. For "52-week high/low", anchor the 365-day window to the symbol's latest available trade_date, not date('now')
-5. All monetary values are in NPR unless stated otherwise
-6. Return only the SQL query. No explanation. No markdown. No backticks.
-"""
+# The schema section is generated from the database: see schema_context.py.
 
 
 @dataclass(frozen=True)
@@ -105,7 +58,7 @@ FEW_SHOT_EXAMPLES = "\n" + "\n\n".join(
 
 
 def build_sql_prompt(question: str) -> str:
-    return f"""{SCHEMA_CONTEXT}
+    return f"""{get_schema_context()}
 
 WORKED EXAMPLES:
 {FEW_SHOT_EXAMPLES}

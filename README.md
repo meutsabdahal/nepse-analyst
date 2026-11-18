@@ -47,7 +47,7 @@ Two leaks affected pipeline SQL scoring. Both are removed.
   - 2026-11-18, both removed: 4.5/12 (37.5%).
 
   The last two runs use the same model and data. The leaked examples did not inflate the score: even Q9, whose exact reference SQL was in the prompt, scored only "partial" in the 33.3% run. With coarse scoring and one run each, the 0.5-point difference should not be read as an improvement.
-- **Remaining prompt guidance:** rule 4 in `SCHEMA_CONTEXT` (anchor 52-week windows to the symbol's latest trade date) is general guidance, but it encodes the convention Q9's ground truth uses.
+- **Remaining prompt guidance:** the SQL prompt's schema section is generated from the live database (`nepse_analyst/schema_context.py`). Its rule 3 (anchor relative windows such as "52-week" to the latest date in the data) is general guidance, but it encodes the convention Q9's ground truth uses.
 - OOS and RAG checks never used either leak.
 
 ## What It Does
