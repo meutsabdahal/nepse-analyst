@@ -377,6 +377,36 @@ body {
     color: #e8dfd2;
 }
 
+.message-body > p,
+.message-body > ul,
+.message-body > ol {
+    margin: 0 0 0.6em;
+}
+
+.message-body > :last-child {
+    margin-bottom: 0;
+}
+
+.message-body ul,
+.message-body ol {
+    padding-left: 1.4rem;
+    white-space: normal;
+}
+
+.message-body li + li {
+    margin-top: 0.2em;
+}
+
+.message-body a:not(.citation) {
+    color: var(--button);
+    overflow-wrap: anywhere;
+}
+
+.message-body strong {
+    color: #f5ede1;
+    font-weight: 650;
+}
+
 .message-meta {
     margin-top: 0.5rem;
 }

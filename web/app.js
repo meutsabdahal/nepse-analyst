@@ -499,31 +499,21 @@ function sourceCardId(messageId, number) {
 // Answer text with each [n] that matches a news card turned into a link to it.
 function renderAnswerText(body, text, messageId, passages) {
     const count = Array.isArray(passages) ? passages.length : 0;
-    if (count === 0) {
-        body.textContent = text;
-        return;
-    }
-    const pattern = /\[(\d+)\]/g;
-    let last = 0;
-    for (const match of text.matchAll(pattern)) {
-        const number = Number(match[1]);
+    renderMarkdown(body, text, (number, label) => {
         if (number < 1 || number > count) {
-            continue;
+            return null;
         }
-        body.append(text.slice(last, match.index));
         const link = document.createElement("a");
         link.className = "citation";
         link.href = `#${sourceCardId(messageId, number)}`;
-        link.textContent = match[0];
+        link.textContent = label;
         link.title = passages[number - 1].title || `Source ${number}`;
         link.addEventListener("click", (event) => {
             event.preventDefault();
             showSourceCard(messageId, number);
         });
-        body.append(link);
-        last = match.index + match[0].length;
-    }
-    body.append(text.slice(last));
+        return link;
+    });
 }
 
 function showSourceCard(messageId, number) {
