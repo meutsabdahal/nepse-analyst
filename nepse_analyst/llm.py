@@ -1,4 +1,3 @@
-import re
 import logging
 
 from nepse_analyst import deadline
@@ -27,15 +26,6 @@ def call(
     smaller), cut to the time left on the request deadline. Raises
     ``deadline.DeadlineExceeded`` when too little time is left to start.
     """
-    # Fast path for strict echo-style prompts used in smoke tests and control checks.
-    match = re.fullmatch(
-        r"\s*Say\s+['\"](.+?)['\"]\s+and\s+nothing\s+else\.?\s*",
-        prompt,
-        flags=re.IGNORECASE,
-    )
-    if match:
-        return match.group(1)
-
     provider = LLM_PROVIDER.strip().lower()
     logger.debug("llm_call_started provider=%s temperature=%.2f", provider, temperature)
     cap = LLM_TIMEOUT_SEC if max_timeout_sec is None else min(LLM_TIMEOUT_SEC, max_timeout_sec)
