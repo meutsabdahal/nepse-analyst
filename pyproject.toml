@@ -1,6 +1,6 @@
 [project]
 name = "nepse-analyst"
-version = "1.0"
+version = "2.0.0"
 description = "A natural language research assistant for Nepal's retail investors"
 readme = "README.md"
 requires-python = ">=3.12.3"
@@ -11,8 +11,10 @@ dependencies = [
     "lxml>=6.0.2",
     "numpy>=2.4.3",
     "pandas>=2.2,<3",
+    "pydantic>=2.12.5",
     "python-dotenv>=1.2.2",
     "requests>=2.32.5",
+    "scikit-learn>=1.8.0",
     "sentence-transformers>=5.3.0",
     "fastapi>=0.135.2",
     "uvicorn[standard]>=0.42.0",

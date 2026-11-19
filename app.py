@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from nepse_analyst import __version__
 from nepse_analyst.chat_helpers import (
     build_passage_preview,
     extract_symbol_from_result,
@@ -29,7 +30,7 @@ WEB_DIR = BASE_DIR / "web"
 app = FastAPI(
     title="NEPSE Analyst",
     description="FastAPI chat service for NEPSE analysis queries",
-    version="2.0.0",
+    version=__version__,
 )
 
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
