@@ -21,6 +21,29 @@ class RouterEntityTests(unittest.TestCase):
         finally:
             router._SYMBOLS = original_cache
 
+    def test_sector_aliases_prefer_the_most_specific_match(self) -> None:
+        cases = {
+            "Which development bank has the highest EPS?": "Development Banks",
+            "List dev bank dividends": "Development Banks",
+            "Top commercial banks by P/E": "Commercial Banks",
+            "Which bank has the highest book value?": "Commercial Banks",
+            "Best non-life insurance company by ROE": "Non-Life Insurance",
+            "Best non life insurance company by ROE": "Non-Life Insurance",
+            "Which life insurance company pays the most dividend?": "Life Insurance",
+            "Microfinance companies with rising EPS": "Microfinance",
+            "Finance companies with the lowest P/E": "Finance Companies",
+            "Hydropower stocks with bonus shares": "Hydropower",
+            "What is the P/E ratio of NABIL?": None,
+        }
+        original_cache = router._SYMBOLS
+        try:
+            router._SYMBOLS = ("NABIL",)
+            for query, expected in cases.items():
+                with self.subTest(query=query):
+                    self.assertEqual(router.extract_entities(query)["sector"], expected)
+        finally:
+            router._SYMBOLS = original_cache
+
 
 if __name__ == "__main__":
     unittest.main()

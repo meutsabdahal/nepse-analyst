@@ -24,12 +24,22 @@ _SECTOR_ALIASES = {
     "microfinance": "Microfinance",
     "finance": "Finance Companies",
     "non-life": "Non-Life Insurance",
+    "non-life insurance": "Non-Life Insurance",
+    "non life insurance": "Non-Life Insurance",
     "hotel": "Hotels & Tourism",
     "tourism": "Hotels & Tourism",
     "manufacturing": "Manufacturing",
     "telecom": "Telecom",
     "mutual fund": "Mutual Funds",
 }
+
+# Longest alias first, so "development bank" wins over "bank" and "microfinance"
+# over "finance". Each alias must start a word: "life insurance" does not match
+# inside "non-life insurance". The end is left open so plurals ("banks") match.
+_SECTOR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(r"(?<![\w-])" + re.escape(alias)), canonical)
+    for alias, canonical in sorted(_SECTOR_ALIASES.items(), key=lambda item: (-len(item[0]), item[0]))
+)
 
 
 def _load_symbols() -> set[str]:
@@ -77,10 +87,10 @@ def extract_entities(query: str) -> dict:
             detected_symbol = symbol
             break
 
-    # Sector detection — check aliases
+    # Sector detection — check aliases, longest first
     detected_sector = None
-    for alias, canonical in _SECTOR_ALIASES.items():
-        if alias in q_lower:
+    for pattern, canonical in _SECTOR_PATTERNS:
+        if pattern.search(q_lower):
             detected_sector = canonical
             break
 
