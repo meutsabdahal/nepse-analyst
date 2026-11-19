@@ -5,7 +5,7 @@ import time
 
 from nepse_analyst import deadline
 from nepse_analyst.router import classify, price_range_metric
-from nepse_analyst.guardrails import build_decline_response, append_disclaimer
+from nepse_analyst.guardrails import build_decline_response
 from nepse_analyst.sql_generator import generate_and_execute
 from nepse_analyst.retriever import search, get_corpus_stats
 from nepse_analyst.database import get_connection
@@ -620,7 +620,7 @@ def _response(
     """
     return {
         "success": success,
-        "answer": append_disclaimer(answer, language),
+        "answer": answer,
         "route": route,
         "sql": sql,
         "sql_rows": sql_rows or [],
@@ -795,12 +795,9 @@ def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
     # Combine both answers into a single response
     combined_parts = []
     if sql_result["success"] and sql_result.get("answer"):
-        # Strip disclaimer from the SQL answer before combining (we'll add once at the end)
-        sql_answer_clean = sql_result["answer"].split("\n\n---\n")[0]
-        combined_parts.append(f"**Structured Data:**\n{sql_answer_clean}")
+        combined_parts.append(f"**Structured Data:**\n{sql_result['answer']}")
     if rag_result["success"] and rag_result.get("answer"):
-        rag_answer_clean = rag_result["answer"].split("\n\n---\n")[0]
-        combined_parts.append(f"**Recent News:**\n{rag_answer_clean}")
+        combined_parts.append(f"**Recent News:**\n{rag_result['answer']}")
 
     if not combined_parts:
         combined = "I was unable to retrieve data for this question from either the database or news corpus."
@@ -872,7 +869,7 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
     Returns:
     {
         "success":        bool,
-        "answer":         str,      # final answer with disclaimer appended
+        "answer":         str,      # final answer shown to the user
         "route":          str,      # 'SQL' | 'RAG' | 'HYBRID' | 'DIRECT' | 'OOS'
         "guardrail_type": str|None, # 'prediction' | 'advice' | 'unknown' | None
         "sql":            str|None, # generated SQL (for transparency panel)

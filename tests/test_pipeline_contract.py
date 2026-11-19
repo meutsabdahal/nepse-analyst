@@ -54,7 +54,7 @@ class PipelineContractTests(unittest.TestCase):
             self.assertTrue(out.get("success"))
             self.assertEqual(out.get("route"), "SQL")
             self.assertTrue(out.get("sql"))
-            self.assertIn("research purposes", out.get("answer", ""))
+            self.assertEqual(out.get("answer"), "Stubbed answer")  # passed through unchanged
         finally:
             pipeline.classify = orig_classify
             pipeline.generate_and_execute = orig_generate

@@ -71,6 +71,22 @@ class SqlFallbackChainTests(unittest.TestCase):
         self.assertEqual(set(result), RESPONSE_KEYS)
 
 
+class HybridAnswerTests(unittest.TestCase):
+    def test_answers_with_a_markdown_rule_are_not_cut(self) -> None:
+        sql_answer = "EBL has the highest EPS.\n\n---\nFigures are from the latest fiscal year."
+        rag_answer = "EBL announced a dividend.\n\n---\nSource: Sharesansar."
+        sql = pipeline._response("SQL", "en", sql_answer, answer_source="generated_sql")
+        rag = pipeline._response("RAG", "en", rag_answer)
+        with patch.object(pipeline, "_handle_sql", return_value=sql), patch.object(
+            pipeline, "_handle_rag", return_value=rag
+        ), patch.object(pipeline, "_get_db_freshness", return_value="db"), patch.object(
+            pipeline, "_get_news_freshness", return_value="news"
+        ):
+            result = pipeline._handle_hybrid("q", "en", {})
+        self.assertIn("Figures are from the latest fiscal year.", result["answer"])
+        self.assertIn("Source: Sharesansar.", result["answer"])
+
+
 class ResponseShapeTests(unittest.TestCase):
     def test_every_route_returns_the_same_keys(self) -> None:
         with patch.object(pipeline, "search", return_value=[]), patch.object(

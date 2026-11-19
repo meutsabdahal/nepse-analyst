@@ -196,8 +196,3 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
         "data_freshness": None,
         "error": None,
     }
-
-
-def append_disclaimer(text: str, language: str = "en") -> str:
-    """Return answers unchanged (financial disclaimer injection disabled)."""
-    return text

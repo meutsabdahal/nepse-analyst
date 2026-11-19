@@ -67,7 +67,7 @@ Two leaks affected pipeline SQL scoring. Both are removed.
 NEPSE Analyst lets users ask natural-language questions about NEPSE-listed companies and returns grounded answers using:
 - Structured SQL for fundamentals, price history, dividends, and IPO data.
 - RAG retrieval over financial/news context.
-- Guardrails that reject prediction/advice requests and inject a financial disclaimer.
+- Guardrails that reject prediction/advice requests.
 - Source transparency in UI responses (SQL preview, row preview, retrieved passages).
 
 ## Current Status
@@ -75,7 +75,7 @@ NEPSE Analyst lets users ask natural-language questions about NEPSE-listed compa
 Implemented:
 - Hybrid query flow: SQL, RAG, HYBRID, DIRECT, and OOS guardrail routing.
 - Multilingual handling for English and Nepali inputs.
-- Guardrails for prediction and advice queries with mandatory disclaimer injection.
+- Guardrails for prediction and advice queries.
 - FastAPI chat backend with a Claude-style web interface.
 - Source transparency support in the chat UI (SQL preview, row preview, retrieved passages).
 - Company quick-facts panel when a symbol can be inferred.
@@ -83,7 +83,7 @@ Implemented:
 
 ## Financial Disclaimer
 
-NEPSE Analyst is a research information tool only. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.
+NEPSE Analyst is a research information tool only. Answers are not followed by a per-answer disclaimer (removed in `cb105ab`); this notice applies to all of them. Nothing in this project constitutes financial advice. Past performance does not guarantee future results. Always consult a SEBON-registered broker or financial advisor before making investment decisions.
 
 ## Architecture
 
