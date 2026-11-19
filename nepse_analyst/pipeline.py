@@ -601,75 +601,82 @@ def _fallback_rag_synthesis(passages: list[dict], language: str) -> str:
 # Route handlers
 
 
+def _response(
+    route: str | None,
+    language: str,
+    answer: str,
+    *,
+    success: bool = True,
+    sql: str | None = None,
+    sql_rows: list | None = None,
+    passages: list | None = None,
+    answer_source: str | None = None,
+    data_freshness: str | None = None,
+    error: str | None = None,
+) -> dict:
+    """The response every pathway returns (see ``run`` for the fields).
+
+    ``answer_source`` defaults to the route in lower case ("rag", "direct").
+    """
+    return {
+        "success": success,
+        "answer": append_disclaimer(answer, language),
+        "route": route,
+        "sql": sql,
+        "sql_rows": sql_rows or [],
+        "answer_source": answer_source or (route or "").lower(),
+        "passages": passages or [],
+        "query_language": language,
+        "data_freshness": data_freshness,
+        "error": error,
+    }
+
+
+def _rule_response(answer_source: str, rule: dict, language: str) -> dict:
+    """Response for an answer built by one of the keyword-triggered SQL rules."""
+    return _response(
+        "SQL",
+        language,
+        rule["answer"],
+        sql=rule.get("sql"),
+        sql_rows=rule.get("sql_rows"),
+        answer_source=answer_source,
+        data_freshness=_get_db_freshness(),
+    )
+
+
+# Keyword-triggered rule answers tried, in this order, when the generated SQL
+# fails or returns no rows. The first one that applies answers. The lambdas
+# look the builders up when called, so tests can replace them.
+_SQL_RULE_FALLBACKS = (
+    ("rule:dividend_streak", lambda q, lang, ent: _build_dividend_consistency_fallback(q, lang, ent)),
+    ("rule:price_range_52w", lambda q, lang, ent: _build_symbol_price_range_fallback(q, lang, ent)),
+    ("rule:latest_metric", lambda q, lang, ent: _build_symbol_metric_fallback(lang, ent)),
+)
+
+
+def _first_rule_answer(query: str, language: str, entities: dict) -> dict | None:
+    for answer_source, build in _SQL_RULE_FALLBACKS:
+        rule = build(query, language, entities)
+        if rule:
+            return _rule_response(answer_source, rule, language)
+    return None
+
+
 def _handle_sql(query: str, language: str, entities: dict) -> dict:
     """Execute the Text-to-SQL pathway."""
-    coverage_fallback = _build_dividend_sector_coverage_fallback(query, language)
-    if coverage_fallback:
-        return {
-            "success": True,
-            "answer": append_disclaimer(coverage_fallback["answer"], language),
-            "route": "SQL",
-            "sql": coverage_fallback.get("sql"),
-            "sql_rows": coverage_fallback.get("sql_rows", []),
-            "answer_source": "rule:dividend_sector_coverage",
-            "passages": [],
-            "query_language": language,
-            "data_freshness": _get_db_freshness(),
-            "error": None,
-        }
+    coverage = _build_dividend_sector_coverage_fallback(query, language)
+    if coverage:
+        return _rule_response("rule:dividend_sector_coverage", coverage, language)
 
     result = generate_and_execute(query)
 
+    if not result["success"] or not result["rows"]:
+        rule_answer = _first_rule_answer(query, language, entities)
+        if rule_answer:
+            return rule_answer
+
     if not result["success"]:
-        dividend_fallback = _build_dividend_consistency_fallback(
-            query, language, entities
-        )
-        if dividend_fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(dividend_fallback["answer"], language),
-                "route": "SQL",
-                "sql": dividend_fallback.get("sql"),
-                "sql_rows": dividend_fallback.get("sql_rows", []),
-                "answer_source": "rule:dividend_streak",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
-
-        price_range_fallback = _build_symbol_price_range_fallback(
-            query, language, entities
-        )
-        if price_range_fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(price_range_fallback["answer"], language),
-                "route": "SQL",
-                "sql": price_range_fallback.get("sql"),
-                "sql_rows": price_range_fallback.get("sql_rows", []),
-                "answer_source": "rule:price_range_52w",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
-
-        fallback = _build_symbol_metric_fallback(language, entities)
-        if fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(fallback["answer"], language),
-                "route": "SQL",
-                "sql": fallback.get("sql"),
-                "sql_rows": fallback.get("sql_rows", []),
-                "answer_source": "rule:latest_metric",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
-
         # The database error stays in "error" (logged with the request ID by run()),
         # never in the answer.
         answer = (
@@ -681,89 +688,22 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "यो प्रश्नको लागि संरचित डेटा प्राप्त गर्न सकिएन। "
                 "डेटा उपलब्ध नहुन सक्छ, वा प्रश्नलाई अझ स्पष्ट रूपमा सोध्दा मद्दत पुग्न सक्छ।"
             )
-        return {
-            "success": False,
-            "answer": append_disclaimer(answer, language),
-            "route": "SQL",
-            "sql": result.get("sql"),
-            "sql_rows": [],
-            "answer_source": "generated_sql_failed",
-            "passages": [],
-            "query_language": language,
-            "data_freshness": _get_db_freshness(),
-            "error": result["error"],
-        }
-
-    if not result["rows"]:
-        dividend_fallback = _build_dividend_consistency_fallback(
-            query, language, entities
+        return _response(
+            "SQL",
+            language,
+            answer,
+            success=False,
+            sql=result.get("sql"),
+            answer_source="generated_sql_failed",
+            data_freshness=_get_db_freshness(),
+            error=result["error"],
         )
-        if dividend_fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(dividend_fallback["answer"], language),
-                "route": "SQL",
-                "sql": dividend_fallback.get("sql"),
-                "sql_rows": dividend_fallback.get("sql_rows", []),
-                "answer_source": "rule:dividend_streak",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
 
-        price_range_fallback = _build_symbol_price_range_fallback(
-            query, language, entities
-        )
-        if price_range_fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(price_range_fallback["answer"], language),
-                "route": "SQL",
-                "sql": price_range_fallback.get("sql"),
-                "sql_rows": price_range_fallback.get("sql_rows", []),
-                "answer_source": "rule:price_range_52w",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
-
-        fallback = _build_symbol_metric_fallback(language, entities)
-        if fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(fallback["answer"], language),
-                "route": "SQL",
-                "sql": fallback.get("sql"),
-                "sql_rows": fallback.get("sql_rows", []),
-                "answer_source": "rule:latest_metric",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
-
-    # If generated SQL returned null-like price range rows, override with deterministic fallback.
-    if _is_price_range_query(query, entities) and not _rows_have_price_range_values(
-        result["rows"]
-    ):
-        price_range_fallback = _build_symbol_price_range_fallback(
-            query, language, entities
-        )
-        if price_range_fallback:
-            return {
-                "success": True,
-                "answer": append_disclaimer(price_range_fallback["answer"], language),
-                "route": "SQL",
-                "sql": price_range_fallback.get("sql"),
-                "sql_rows": price_range_fallback.get("sql_rows", []),
-                "answer_source": "rule:price_range_52w",
-                "passages": [],
-                "query_language": language,
-                "data_freshness": _get_db_freshness(),
-                "error": None,
-            }
+    # Generated SQL for a 52-week question returned null-like high/low values.
+    if _is_price_range_query(query, entities) and not _rows_have_price_range_values(result["rows"]):
+        price_range = _build_symbol_price_range_fallback(query, language, entities)
+        if price_range:
+            return _rule_response("rule:price_range_52w", price_range, language)
 
     # Synthesise natural language answer from SQL result
     synthesis_prompt = build_sql_synthesis_prompt(
@@ -779,33 +719,24 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
     except Exception:
         answer = _fallback_sql_synthesis(result["rows"], language)
 
-    return {
-        "success": True,
-        "answer": append_disclaimer(answer, language),
-        "route": "SQL",
-        "sql": result["sql"],
-        "sql_rows": result["rows"],
-        "answer_source": "generated_sql",
-        "passages": [],
-        "query_language": language,
-        "data_freshness": _get_db_freshness(),
-        "error": None,
-    }
+    return _response(
+        "SQL",
+        language,
+        answer,
+        sql=result["sql"],
+        sql_rows=result["rows"],
+        answer_source="generated_sql",
+        data_freshness=_get_db_freshness(),
+    )
 
 
 def _handle_rag(query: str, language: str, entities: dict) -> dict:
     """Execute the multilingual RAG pathway."""
     if deadline.expired():  # e.g. the SQL half of a hybrid question used the whole budget
-        return {
-            "success": False,
-            "answer": "",
-            "route": "RAG",
-            "sql": None,
-            "passages": [],
-            "query_language": language,
-            "data_freshness": None,
-            "error": "News search skipped: request time limit reached",
-        }
+        return _response(
+            "RAG", language, "", success=False,
+            error="News search skipped: request time limit reached",
+        )
     # Detected company/sector ranks matching articles higher; it does not filter.
     try:
         passages = search(
@@ -823,16 +754,10 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
             answer = (
                 "समाचार खोज सुविधा हाल उपलब्ध छैन। " "एम्बेडिङ मोडेल वा भेक्टर स्टोर लोड हुन सकेन।"
             )
-        return {
-            "success": False,
-            "answer": append_disclaimer(answer, language),
-            "route": "RAG",
-            "sql": None,
-            "passages": [],
-            "query_language": language,
-            "data_freshness": "News data freshness unknown",
-            "error": str(e),
-        }
+        return _response(
+            "RAG", language, answer, success=False,
+            data_freshness="News data freshness unknown", error=str(e),
+        )
 
     if not passages:
         answer = (
@@ -841,16 +766,10 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
         )
         if language == "ne":
             answer = "यस प्रश्नसँग सम्बन्धित कुनै समाचार भेटिएन।"
-        return {
-            "success": False,
-            "answer": append_disclaimer(answer, language),
-            "route": "RAG",
-            "sql": None,
-            "passages": [],
-            "query_language": language,
-            "data_freshness": _get_news_freshness(),
-            "error": "No passages retrieved",
-        }
+        return _response(
+            "RAG", language, answer, success=False,
+            data_freshness=_get_news_freshness(), error="No passages retrieved",
+        )
 
     synthesis_prompt = build_rag_synthesis_prompt(query, passages, language)
     try:
@@ -862,16 +781,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
     if stale_warning:
         answer = f"{stale_warning}\n\n{answer}"
 
-    return {
-        "success": True,
-        "answer": append_disclaimer(answer, language),
-        "route": "RAG",
-        "sql": None,
-        "passages": passages,
-        "query_language": language,
-        "data_freshness": _get_news_freshness(),
-        "error": None,
-    }
+    return _response("RAG", language, answer, passages=passages, data_freshness=_get_news_freshness())
 
 
 def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
@@ -897,36 +807,24 @@ def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
     else:
         combined = "\n\n".join(combined_parts)
 
-    return {
-        "success": sql_result["success"] or rag_result["success"],
-        "answer": append_disclaimer(combined, language),
-        "route": "HYBRID",
-        "sql": sql_result.get("sql"),
-        "sql_rows": sql_result.get("sql_rows", []),
-        "answer_source": sql_result.get("answer_source"),
-        "passages": rag_result.get("passages", []),
-        "query_language": language,
-        "data_freshness": f"{_get_db_freshness()} | {_get_news_freshness()}",
-        "error": None,
-    }
+    return _response(
+        "HYBRID",
+        language,
+        combined,
+        success=sql_result["success"] or rag_result["success"],
+        sql=sql_result.get("sql"),
+        sql_rows=sql_result.get("sql_rows"),
+        answer_source=sql_result.get("answer_source"),
+        passages=rag_result.get("passages"),
+        data_freshness=f"{_get_db_freshness()} | {_get_news_freshness()}",
+    )
 
 
 def _handle_direct(query: str, language: str) -> dict:
     """Handle general knowledge questions about NEPSE that need no data retrieval."""
     prompt = build_direct_prompt(query, language)
-    answer = llm.call(
-        prompt, temperature=0.2
-    )  # slight temperature for more natural prose
-    return {
-        "success": True,
-        "answer": append_disclaimer(answer, language),
-        "route": "DIRECT",
-        "sql": None,
-        "passages": [],
-        "query_language": language,
-        "data_freshness": None,
-        "error": None,
-    }
+    answer = llm.call(prompt, temperature=0.2)  # slight temperature for more natural prose
+    return _response("DIRECT", language, answer)
 
 
 UNEXPECTED_ERROR_ANSWERS = {
@@ -946,18 +844,10 @@ def _timeout_result(route: str, language: str, timeout_sec: float, error: str) -
             f"This question could not be answered within the {timeout_sec:g} s time limit. "
             "Please try a narrower or more specific question."
         )
-    return {
-        "success": False,
-        "answer": append_disclaimer(answer, language),
-        "route": route,
-        "sql": None,
-        "sql_rows": [],
-        "answer_source": "timeout",
-        "passages": [],
-        "query_language": language,
-        "data_freshness": None,
-        "error": f"deadline_exceeded: {error}",
-    }
+    return _response(
+        route, language, answer, success=False, answer_source="timeout",
+        error=f"deadline_exceeded: {error}",
+    )
 
 
 # Main entry point
@@ -997,18 +887,9 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
     """
     query = query.strip()
     if not query:
-        return {
-            "success": False,
-            "answer": "Please enter a question.",
-            "route": None,
-            "guardrail_type": None,
-            "sql": None,
-            "sql_rows": [],
-            "passages": [],
-            "query_language": "en",
-            "data_freshness": None,
-            "error": "Empty query",
-        }
+        empty = _response(None, "en", "Please enter a question.", success=False, error="Empty query")
+        empty["guardrail_type"] = None
+        return empty
 
     # Step 1 — Classify and route
     routing = classify(query)
@@ -1069,20 +950,14 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
             route,
             str(e),
         )
-        result = {
-            "success": False,
-            "answer": append_disclaimer(
-                UNEXPECTED_ERROR_ANSWERS.get(language, UNEXPECTED_ERROR_ANSWERS["en"]), language
-            ),
-            "answer_source": "error",
-            "route": route,
-            "sql": None,
-            "sql_rows": [],
-            "passages": [],
-            "query_language": language,
-            "data_freshness": None,
-            "error": str(e),
-        }
+        result = _response(
+            route,
+            language,
+            UNEXPECTED_ERROR_ANSWERS.get(language, UNEXPECTED_ERROR_ANSWERS["en"]),
+            success=False,
+            answer_source="error",
+            error=str(e),
+        )
 
     dispatch_ms = (time.perf_counter() - dispatch_started) * 1000.0
     logger.info(
@@ -1105,5 +980,4 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
         )
 
     result["guardrail_type"] = None
-    result.setdefault("answer_source", (result.get("route") or route or "").lower())
     return result
