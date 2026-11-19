@@ -68,3 +68,45 @@ class QuickFactRowsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuickFactsSymbolTests(unittest.TestCase):
+    """The panel appears only when the question is about one company."""
+
+    def setUp(self) -> None:
+        from nepse_analyst import router
+
+        self.router = router
+        self.original_cache = router._SYMBOLS
+        router._SYMBOLS = router._sort_symbols({"NABIL", "NIMB", "AHPC", "UPPER", "SEBON"})
+
+    def tearDown(self) -> None:
+        self.router._SYMBOLS = self.original_cache
+
+    def symbol(self, query, rows=()):
+        from nepse_analyst.chat_helpers import extract_symbol_from_result
+
+        return extract_symbol_from_result({"sql_rows": [{"symbol": s} for s in rows]}, query)
+
+    def test_one_named_company(self) -> None:
+        self.assertEqual(self.symbol("What is the EPS of NABIL?", ["NABIL"]), "NABIL")
+        self.assertEqual(self.symbol("NABIL dividend history", ["NABIL", "NABIL"]), "NABIL")
+        self.assertEqual(self.symbol("Latest news about NABIL"), "NABIL")
+
+    def test_list_answer_gets_no_panel(self) -> None:
+        query = "Which hydropower companies paid dividends?"
+        self.assertIsNone(self.symbol(query, ["AHPC", "UPPER"]))
+
+    def test_answer_about_a_single_company_gets_its_panel(self) -> None:
+        self.assertEqual(self.symbol("Which bank has the highest EPS?", ["NIMB"]), "NIMB")
+
+    def test_several_named_companies_get_no_panel(self) -> None:
+        self.assertIsNone(self.symbol("Compare NIMB and NABIL for EPS", ["NIMB", "NABIL"]))
+
+    def test_named_company_with_other_companies_listed_gets_no_panel(self) -> None:
+        query = "Which banks pay a higher dividend than NABIL?"
+        self.assertIsNone(self.symbol(query, ["NIMB", "AHPC"]))
+
+    def test_ordinary_words_are_not_companies(self) -> None:
+        self.assertIsNone(self.symbol("What does SEBON say about circuit limits?"))
+        self.assertIsNone(self.symbol("Explain what a P/E ratio means."))

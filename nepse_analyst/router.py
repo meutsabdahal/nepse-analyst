@@ -122,25 +122,31 @@ def _get_symbols() -> tuple[str, ...]:
     return _SYMBOLS
 
 
+def extract_symbols(query: str) -> list[str]:
+    """Every company symbol the query names, longest symbols first."""
+    q_upper = query.upper()
+    # Match as whole word to avoid partial matches (e.g. 'NIC' inside 'NICA').
+    # Symbols that are also ordinary words need the name or market context.
+    return [
+        symbol
+        for symbol in _get_symbols()
+        if any(
+            ambiguous_symbols.mention_counts(symbol, query, m.start(), m.end())
+            for m in re.finditer(r"\b" + re.escape(symbol) + r"\b", q_upper)
+        )
+    ]
+
+
 def extract_entities(query: str) -> dict:
     """
     Extract structured entities from a natural language query.
     Returns: {'symbol': str|None, 'sector': str|None, 'metric': str|None, 'time_period': str|None}
     """
-    q_upper = query.upper()
     q_lower = query.lower()
 
-    # Symbol detection — check if any known symbol appears in the query
-    detected_symbol = None
-    for symbol in _get_symbols():
-        # Match as whole word to avoid partial matches (e.g. 'NIC' inside 'NICA').
-        # Symbols that are also ordinary words need the name or market context.
-        if any(
-            ambiguous_symbols.mention_counts(symbol, query, m.start(), m.end())
-            for m in re.finditer(r"\b" + re.escape(symbol) + r"\b", q_upper)
-        ):
-            detected_symbol = symbol
-            break
+    # Symbol detection — the most specific known symbol named in the query
+    symbols = extract_symbols(query)
+    detected_symbol = symbols[0] if symbols else None
 
     # Sector detection — check aliases, longest first
     detected_sector = None

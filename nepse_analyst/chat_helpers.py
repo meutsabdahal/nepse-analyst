@@ -4,43 +4,34 @@ from datetime import date
 from typing import Any
 from urllib.parse import urlparse
 
+from nepse_analyst import router
 from nepse_analyst.config import NEWS_STALE_DAYS, PRICE_STALE_DAYS
 from nepse_analyst.database import get_connection
 from nepse_analyst.number_format import percent, plain, rupee_amount, rupees
 
 
 def extract_symbol_from_result(result: dict[str, Any], query: str) -> str | None:
-    """Try SQL rows first, then query tokens, to locate a company symbol."""
-    for row in result.get("sql_rows", []) or []:
-        symbol = row.get("symbol")
-        if isinstance(symbol, str) and symbol.strip():
-            return symbol.strip().upper()
+    """The one company the quick-facts panel should describe, or None.
 
-    tokens = [token.strip(" ,.?()[]{}:;!\"'") for token in query.split()]
-    candidates = {
-        token.upper()
-        for token in tokens
-        if token.isascii() and token.isalpha() and 2 <= len(token) <= 6
+    The panel only makes sense when the question is about a single company. A
+    question that names several companies, or an answer that lists several
+    (hydropower companies that paid dividends), gets no panel rather than one
+    for whichever company happened to come first.
+    """
+    named = set(router.extract_symbols(query))
+    if len(named) > 1:
+        return None
+
+    answered = {
+        symbol.strip().upper()
+        for row in result.get("sql_rows") or []
+        if isinstance(symbol := row.get("symbol"), str) and symbol.strip()
     }
-    if not candidates:
-        return None
-
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        placeholders = ",".join(["?"] * len(candidates))
-        sql = (
-            "SELECT symbol FROM companies "
-            f"WHERE symbol IN ({placeholders}) "
-            "ORDER BY symbol LIMIT 1"
-        )
-        cursor.execute(sql, tuple(sorted(candidates)))
-        row = cursor.fetchone()
-        if row and row["symbol"]:
-            return str(row["symbol"]).strip().upper()
-        return None
-    finally:
-        conn.close()
+    if named:
+        # "Which banks pay more than NABIL?" names one company but lists others.
+        return next(iter(named)) if answered <= named else None
+    # Nothing named: only an answer about exactly one company gets a panel.
+    return answered.pop() if len(answered) == 1 else None
 
 
 def fetch_quick_facts(symbol: str) -> dict[str, Any] | None:
