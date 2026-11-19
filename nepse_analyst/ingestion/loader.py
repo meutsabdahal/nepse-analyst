@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-from nepse_analyst import ambiguous_symbols
+from nepse_analyst import ambiguous_symbols, corpus_stats
 from nepse_analyst.config import (
     DB_PATH,
     MAX_ARTICLES,
@@ -245,7 +245,11 @@ def dedupe_by_title(docs: list[dict]) -> list[dict]:
 
 
 def index_news_in_chroma(docs: list[dict], vector_store_dir: str, collection_name: str) -> int:
-    """Rebuild the Chroma collection from scratch. Returns the indexed count."""
+    """Rebuild the Chroma collection from scratch. Returns the indexed count.
+
+    The corpus stats (document count, date range, build time) are recorded in
+    the collection metadata; ``retriever.get_corpus_stats`` reads them back.
+    """
     import numpy as np
 
     # Prevent implicit use of stale Hugging Face auth tokens.
@@ -265,7 +269,11 @@ def index_news_in_chroma(docs: list[dict], vector_store_dir: str, collection_nam
         client.delete_collection(collection_name)
     except Exception:
         pass
-    collection = client.create_collection(name=collection_name, metadata={"hnsw:space": "cosine"})
+    stats = corpus_stats.summarize(d.get("published_at") for d in docs)
+    collection = client.create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": "cosine", **corpus_stats.to_collection_metadata(stats)},
+    )
 
     fallback = None
     for i in range(0, len(docs), 200):

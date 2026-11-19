@@ -15,6 +15,7 @@ from nepse_analyst.config import (
     RAG_SECTOR_BOOST,
     RAG_SYMBOL_BOOST,
 )
+from nepse_analyst import corpus_stats
 from nepse_analyst.embeddings import encode_query
 from nepse_analyst.news_tags import sector_key, split_tags, symbol_key
 
@@ -127,7 +128,13 @@ def search(
 
 
 def get_corpus_stats() -> dict:
-    """Return basic stats about the indexed corpus — useful for the UI freshness indicator."""
+    """Stats about the indexed news corpus, for the freshness line and staleness warning.
+
+    Read from the collection metadata recorded when the index was built
+    (``corpus_stats``). For an index built before stats were recorded, or one
+    whose document count no longer matches them, they are computed from every
+    document's ``published_at``. Cached for CORPUS_STATS_TTL_SEC.
+    """
     global _corpus_stats_cache
 
     now = time.time()
@@ -140,41 +147,13 @@ def get_corpus_stats() -> dict:
 
     collection = _get_collection()
     count = collection.count()
-
-    if count == 0:
-        value = {
-            "total_documents": 0,
-            "earliest_date": "unknown",
-            "latest_date": "unknown",
-        }
-        if CORPUS_STATS_TTL_SEC > 0:
-            _corpus_stats_cache = {
-                "value": value,
-                "expires_at": now + CORPUS_STATS_TTL_SEC,
-            }
-        return value
-
-    # Get date range by querying a sample
-    sample = collection.query(
-        query_embeddings=[encode_query("NEPSE market news").tolist()],
-        n_results=min(100, count),
-        include=["metadatas"],
-    )
-    dates = [
-        m.get("published_at", "")
-        for m in sample["metadatas"][0]
-        if m.get("published_at")
-    ]
-    value = {
-        "total_documents": count,
-        "earliest_date": min(dates) if dates else "unknown",
-        "latest_date": max(dates) if dates else "unknown",
-    }
+    value = corpus_stats.from_collection_metadata(collection.metadata)
+    if value is None or value["total_documents"] != count:
+        metadatas = collection.get(include=["metadatas"])["metadatas"] if count else []
+        value = corpus_stats.summarize(
+            (m or {}).get("published_at") for m in metadatas
+        ) | {"built_at": (value or {}).get("built_at", "unknown")}
 
     if CORPUS_STATS_TTL_SEC > 0:
-        _corpus_stats_cache = {
-            "value": value,
-            "expires_at": now + CORPUS_STATS_TTL_SEC,
-        }
-
+        _corpus_stats_cache = {"value": value, "expires_at": now + CORPUS_STATS_TTL_SEC}
     return value
