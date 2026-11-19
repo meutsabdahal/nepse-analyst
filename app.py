@@ -19,7 +19,7 @@ from nepse_analyst.chat_helpers import (
 )
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
 from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
-from nepse_analyst.pipeline import run
+from nepse_analyst.pipeline import UNEXPECTED_ERROR_ANSWERS, run
 from nepse_analyst.rate_limit import SlidingWindowLimiter, retry_after_header
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -63,6 +63,13 @@ def enforce_chat_rate_limit(request: Request) -> None:
         )
 
 
+def public_error(result: dict[str, Any]) -> str | None:
+    """A short code for the response. The detail is in the server log under the request ID."""
+    if not result.get("error"):
+        return None
+    return "timeout" if result.get("answer_source") == "timeout" else "request_failed"
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
@@ -97,7 +104,16 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
 
     request_id = str(uuid4())
     started = time.perf_counter()
-    result = run(query, request_id=request_id)
+    try:
+        result = run(query, request_id=request_id)
+    except Exception:
+        logger.exception("chat_unhandled_error request_id=%s", request_id)
+        result = {
+            "success": False,
+            "answer": UNEXPECTED_ERROR_ANSWERS["en"],
+            "answer_source": "error",
+            "error": "unhandled exception (see log)",
+        }
     latency_ms = (time.perf_counter() - started) * 1000.0
 
     logger.info(
@@ -110,8 +126,12 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         result.get("error"),
     )
 
-    symbol = extract_symbol_from_result(result, query)
-    quick_facts = fetch_quick_facts(symbol) if symbol else None
+    try:
+        symbol = extract_symbol_from_result(result, query)
+        quick_facts = fetch_quick_facts(symbol) if symbol else None
+    except Exception:
+        logger.exception("chat_quick_facts_error request_id=%s", request_id)
+        quick_facts = None
 
     return {
         "request_id": request_id,
@@ -128,7 +148,7 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
             "sql_rows_preview": (result.get("sql_rows") or [])[:20],
             "passages": build_passage_preview(result.get("passages") or []),
         },
-        "error": result.get("error"),
+        "error": public_error(result),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -670,17 +670,16 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
                 "error": None,
             }
 
+        # The database error stays in "error" (logged with the request ID by run()),
+        # never in the answer.
         answer = (
-            "I was unable to retrieve structured data for this question. "
-            f"The database returned an error after {result['attempts']} attempts: "
-            f"{result['error']}\n\n"
-            "This may mean the data is not available in the current dataset. "
-            "Please check the data freshness indicator."
+            "I could not get the data for this question. It may not be in the current "
+            "dataset, or it may help to ask it more specifically."
         )
         if language == "ne":
             answer = (
                 "यो प्रश्नको लागि संरचित डेटा प्राप्त गर्न सकिएन। "
-                "डेटाबेसले त्रुटि दियो। डेटा उपलब्ध नहुन सक्छ।"
+                "डेटा उपलब्ध नहुन सक्छ, वा प्रश्नलाई अझ स्पष्ट रूपमा सोध्दा मद्दत पुग्न सक्छ।"
             )
         return {
             "success": False,
@@ -930,6 +929,12 @@ def _handle_direct(query: str, language: str) -> dict:
     }
 
 
+UNEXPECTED_ERROR_ANSWERS = {
+    "en": "Something went wrong while answering this question. Please try again in a moment.",
+    "ne": "यो प्रश्नको उत्तर दिँदा समस्या आयो। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।",
+}
+
+
 def _timeout_result(route: str, language: str, timeout_sec: float, error: str) -> dict:
     if language == "ne":
         answer = (
@@ -1067,9 +1072,9 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
         result = {
             "success": False,
             "answer": append_disclaimer(
-                f"An unexpected error occurred while processing your question: {str(e)}",
-                language,
+                UNEXPECTED_ERROR_ANSWERS.get(language, UNEXPECTED_ERROR_ANSWERS["en"]), language
             ),
+            "answer_source": "error",
             "route": route,
             "sql": None,
             "sql_rows": [],
@@ -1081,13 +1086,23 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
 
     dispatch_ms = (time.perf_counter() - dispatch_started) * 1000.0
     logger.info(
-        "route_completed request_id=%s route=%s success=%s latency_ms=%.2f error=%s",
+        "route_completed request_id=%s route=%s success=%s latency_ms=%.2f",
         request_id,
         result.get("route"),
         result.get("success"),
         dispatch_ms,
-        result.get("error"),
     )
+    if result.get("error"):
+        # The detail (database errors, exception text) is for the logs only;
+        # users get the plain answer and the request ID.
+        logger.warning(
+            "route_error request_id=%s route=%s answer_source=%s sql=%r error=%s",
+            request_id,
+            result.get("route"),
+            result.get("answer_source"),
+            result.get("sql"),
+            result.get("error"),
+        )
 
     result["guardrail_type"] = None
     result.setdefault("answer_source", (result.get("route") or route or "").lower())

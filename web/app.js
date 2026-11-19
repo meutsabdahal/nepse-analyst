@@ -317,7 +317,13 @@ function renderSourceMeta(container, meta) {
         container.append(factsWrap);
     }
 
-    if (meta.error) {
+    if (meta.success === false && meta.request_id) {
+        // Server-side detail is logged under this ID; it is never sent to the browser.
+        const refChip = document.createElement("span");
+        refChip.className = "chip";
+        refChip.textContent = `Reference: ${meta.request_id}`;
+        container.append(refChip);
+    } else if (meta.error) {
         const errorChip = document.createElement("span");
         errorChip.className = "chip";
         errorChip.textContent = `Error detail: ${meta.error}`;
@@ -551,7 +557,7 @@ async function sendMessage(message) {
                 data_freshness: payload.data_freshness,
                 quick_facts: payload.quick_facts,
                 sources: payload.sources,
-                error: payload.error,
+                request_id: payload.request_id,
             }
         );
     } catch (error) {
