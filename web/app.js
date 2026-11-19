@@ -259,20 +259,40 @@ function renderThreadList() {
     }
 }
 
+// What each answer_basis kind means, shown on hover.
+const BASIS_HINTS = {
+    database: "Computed from the NEPSE database.",
+    news: "Summarised from the news articles listed under Sources.",
+    database_and_news: "Combines the NEPSE database with the news articles listed under Sources.",
+    general_knowledge: "Written by the language model alone. No database or news was checked, so verify it.",
+    declined: "Outside what NEPSE Analyst answers (predictions or investment advice).",
+};
+
 function renderSourceMeta(container, meta) {
     if (!meta) {
         return;
     }
 
+    const basis = meta.answer_basis;
     const priceFreshness = extractPriceFreshness(meta.data_freshness);
-    if (priceFreshness) {
+    if ((basis && basis.label) || priceFreshness) {
         const row = document.createElement("div");
         row.className = "meta-row";
 
-        const chip = document.createElement("span");
-        chip.className = "chip";
-        chip.textContent = priceFreshness;
-        row.append(chip);
+        if (basis && basis.label) {
+            const basisChip = document.createElement("span");
+            basisChip.className = `chip basis-chip basis-${basis.kind}`;
+            basisChip.textContent = basis.label;
+            basisChip.title = BASIS_HINTS[basis.kind] || "";
+            row.append(basisChip);
+        }
+
+        if (priceFreshness) {
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            chip.textContent = priceFreshness;
+            row.append(chip);
+        }
 
         container.append(row);
     }
@@ -552,6 +572,7 @@ async function sendMessage(message) {
             {
                 success: payload.success,
                 route: payload.route,
+                answer_basis: payload.answer_basis,
                 guardrail_type: payload.guardrail_type,
                 query_language: payload.query_language,
                 data_freshness: payload.data_freshness,

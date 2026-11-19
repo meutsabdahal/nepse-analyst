@@ -127,3 +127,44 @@ def build_passage_preview(passages: list[dict[str, Any]]) -> list[dict[str, Any]
             }
         )
     return output
+
+
+# Answers that could not be produced do not claim a source.
+_NO_DATA_SOURCES = {"generated_sql_failed", "timeout", "error"}
+
+
+def _articles(count: int) -> str:
+    return f"{count} news article" + ("" if count == 1 else "s")
+
+
+def answer_basis(result: dict[str, Any]) -> dict[str, Any] | None:
+    """What an answer is based on, for the label shown under it.
+
+    Returns ``{"kind", "label", "news_articles"}``, or None for an answer that
+    failed (it is based on nothing, and the page shows a reference instead).
+    ``kind`` is one of "database", "news", "database_and_news",
+    "general_knowledge" (the model alone, nothing checked) or "declined".
+    """
+    route = result.get("route")
+    if route == "OOS":
+        return {"kind": "declined", "label": "Declined", "news_articles": 0}
+    if not result.get("success"):
+        return None
+    if route == "DIRECT":
+        return {"kind": "general_knowledge", "label": "General knowledge, no data checked", "news_articles": 0}
+
+    articles = len(result.get("passages") or [])
+    used_database = route in ("SQL", "HYBRID") and bool(result.get("sql")) and (
+        result.get("answer_source") not in _NO_DATA_SOURCES
+    )
+    if used_database and articles:
+        return {
+            "kind": "database_and_news",
+            "label": f"From the database and {_articles(articles)}",
+            "news_articles": articles,
+        }
+    if used_database:
+        return {"kind": "database", "label": "From the database", "news_articles": 0}
+    if articles:
+        return {"kind": "news", "label": f"From {_articles(articles)}", "news_articles": articles}
+    return None
