@@ -191,7 +191,7 @@ The companies step upserts the live list. A company that drops off it (delisted,
 
 The news step checks the scraped corpus before replacing the vector store. It fails, leaving the existing store in place, when there are fewer than `NEWS_MIN_ARTICLES` (default 50) articles after dedupe, when the newest article is older than `NEWS_MAX_NEWEST_AGE_DAYS` (default 14), or when more than half the articles have no parseable date. A source that returns nothing (NepseAlpha is often unreachable) prints a warning. Set `NEWS_ALLOW_THIN_CORPUS=1` to index anyway; the problems are still printed and returned in the step result.
 
-`NepseApiSource` wraps the unofficial NEPSE API (the `nepse-api` client, then the nepseapi.surajrimal.dev mirror). Neither is an official feed. To replace it, implement `PriceSource` (`available`, `fetch_price_history`, `fetch_index_history`) and pass it in:
+`NepseApiSource` reads the unofficial NEPSE API through the community nepseapi.surajrimal.dev mirror. It is not an official feed. To replace it, implement `PriceSource` (`available`, `fetch_price_history`, `fetch_index_history`) and pass it in:
 
 ```python
 from nepse_analyst.ingestion import Loader, default_sources
@@ -243,10 +243,7 @@ Run regression tests:
 
 Tip: keep using `uv run` for scripts and tests instead of relying on shell activation.
 
-Troubleshooting (TestClient mismatch):
-- If you see `TypeError: Client.__init__() got an unexpected keyword argument 'follow_redirects'`, your Starlette and httpx versions are incompatible.
-- Short-term: prefer function-level API handler tests (as in `tests/test_app_api.py`) instead of `fastapi.testclient.TestClient`.
-- Long-term: align FastAPI/Starlette/httpx dependency versions in one update.
+`fastapi.testclient.TestClient` works. It used to fail (`Client.__init__() got an unexpected keyword argument 'follow_redirects'`) because the `nepse-api` package pinned httpx below 0.19; that package was removed, which also let chromadb move from 0.5.0 to 1.5.9.
 
 ## Known Data Constraints
 

@@ -250,14 +250,10 @@ def index_news_in_chroma(docs: list[dict], vector_store_dir: str, collection_nam
     The corpus stats (document count, date range, build time) are recorded in
     the collection metadata; ``retriever.get_corpus_stats`` reads them back.
     """
-    import numpy as np
-
     # Prevent implicit use of stale Hugging Face auth tokens.
     os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     for var in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
         os.environ.pop(var, None)
-    if not hasattr(np, "float_"):  # chromadb 0.5.x on NumPy 2.x
-        np.float_ = np.float64
 
     import chromadb
 

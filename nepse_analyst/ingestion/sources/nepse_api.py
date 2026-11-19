@@ -1,16 +1,16 @@
 """Unofficial NEPSE API price source.
 
-Two unofficial endpoints, tried in order:
-1. the ``nepse-api`` package client (async, wraps nepalstock.com internals);
-2. the community HTTP mirror at nepseapi.surajrimal.dev.
-
-Neither is an official, stable API. Replace this class with another
+Reads the community HTTP mirror of NepseUnofficialApi at nepseapi.surajrimal.dev.
+It is not an official, stable API. Replace this class with another
 ``PriceSource`` when an official feed is available.
+
+The ``nepse-api`` package client this source used to try first targeted
+newweb.nepalstock.com, which no longer resolves; it was removed along with
+the package (its httpx<0.19 pin blocked upgrading chromadb).
 """
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -87,54 +87,21 @@ class NepseApiSource:
     def __init__(
         self,
         mirror_base: str = DEFAULT_MIRROR_BASE,
-        use_client: bool = True,
         min_request_interval_sec: float = 1.0,
         timeout_sec: float = 8,
     ) -> None:
         self.mirror_base = mirror_base.rstrip("/")
         self.min_request_interval_sec = min_request_interval_sec
         self.timeout_sec = timeout_sec
-        # None = untested (try it); True/False = result of available().
-        self._client_ok: bool | None = None if use_client else False
+        # None = untested; True/False = result of available().
         self._mirror_ok: bool | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._client: Any = None
         self._last_request_ts = 0.0
 
-    # -- plumbing ---------------------------------------------------------
     def _throttle(self) -> None:
         wait = self.min_request_interval_sec - (time.monotonic() - self._last_request_ts)
         if wait > 0:
             time.sleep(wait)
         self._last_request_ts = time.monotonic()
-
-    def _run(self, coro: Any) -> Any:
-        if self._loop is None:
-            self._loop = asyncio.new_event_loop()
-        return self._loop.run_until_complete(coro)
-
-    def _get_client(self) -> Any:
-        if self._client is None:
-            from nepse import Client
-
-            async def _make() -> Any:
-                return Client()
-
-            self._client = self._run(_make())
-        return self._client
-
-    def _history_via_client(self, symbol: str) -> list[Any]:
-        client = self._get_client()
-
-        async def _fetch() -> list[Any]:
-            company = await client.security_client.get_company(symbol=symbol)
-            company_id = first_non_null(company, ["security_id", "id"])
-            if company_id is None:
-                raise ValueError(f"Missing security_id for symbol {symbol}")
-            history = await client.security_client.get_company_history(company_id=company_id)
-            return normalize_rows(history)
-
-        return self._run(_fetch())
 
     def _history_via_mirror(self, symbol: str) -> list[Any]:
         payload = http_get_json(
@@ -146,32 +113,20 @@ class NepseApiSource:
 
     # -- PriceSource ------------------------------------------------------
     def available(self) -> bool:
-        if self._client_ok is not False:
-            try:
-                self._history_via_client(PROBE_SYMBOL)
-                self._client_ok = True
-            except Exception:
-                self._client_ok = False
         try:
             self._mirror_ok = len(self._history_via_mirror(PROBE_SYMBOL)) > 0
         except Exception:
             self._mirror_ok = False
-        return bool(self._client_ok or self._mirror_ok)
+        return self._mirror_ok
 
     def fetch_price_history(self, symbol: str) -> list[PriceBar]:
-        rows: list[Any] = []
-        if self._client_ok is not False:
-            try:
-                self._throttle()
-                rows = self._history_via_client(symbol)
-            except Exception:
-                rows = []
-        if not rows and self._mirror_ok is not False:
-            try:
-                self._throttle()
-                rows = self._history_via_mirror(symbol)
-            except Exception:
-                rows = []
+        if self._mirror_ok is False:
+            return []
+        try:
+            self._throttle()
+            rows = self._history_via_mirror(symbol)
+        except Exception:
+            rows = []
         return price_bars_from_records(symbol, rows)
 
     def fetch_index_history(self) -> list[IndexBar]:
@@ -183,14 +138,3 @@ class NepseApiSource:
             except Exception as exc:
                 print(f"[{self.name}] {index_name} index via {endpoint} failed: {exc}")
         return bars
-
-    def close(self) -> None:
-        if self._loop is None:
-            return
-        try:
-            if self._client is not None:
-                self._run(self._client.close())
-        finally:
-            self._loop.close()
-            self._loop = None
-            self._client = None

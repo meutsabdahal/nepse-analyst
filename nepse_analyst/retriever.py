@@ -1,9 +1,4 @@
-import numpy as np
 import time
-
-# ChromaDB 0.5.x expects np.float_ at import time, which was removed in NumPy 2.x.
-if not hasattr(np, "float_"):
-    np.float_ = np.float64
 
 import chromadb
 from nepse_analyst.config import (
