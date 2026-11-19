@@ -427,6 +427,41 @@ body {
     background: #2a2621;
 }
 
+.retry-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.4rem;
+}
+
+.retry-button {
+    border: 1px solid var(--button);
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    background: transparent;
+    color: var(--button);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.retry-button:hover:not(:disabled) {
+    background: var(--button);
+    color: #ffffff;
+}
+
+.retry-button:focus-visible {
+    outline: 2px solid var(--button-hover);
+    outline-offset: 2px;
+}
+
+.retry-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .basis-chip {
     color: var(--main-text);
     border-color: #6b5f4e;

@@ -371,17 +371,26 @@ function renderSourceMeta(container, meta, messageId) {
         container.append(factsWrap);
     }
 
-    if (meta.success === false && meta.request_id) {
-        // Server-side detail is logged under this ID; it is never sent to the browser.
-        const refChip = document.createElement("span");
-        refChip.className = "chip";
-        refChip.textContent = `Reference: ${meta.request_id}`;
-        container.append(refChip);
-    } else if (meta.error) {
-        const errorChip = document.createElement("span");
-        errorChip.className = "chip";
-        errorChip.textContent = `Error detail: ${meta.error}`;
-        container.append(errorChip);
+    if (isRetryable(meta)) {
+        // The answer text is the plain explanation; raw error detail is never shown.
+        const row = document.createElement("div");
+        row.className = "retry-row";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "retry-button";
+        retry.textContent = "Retry";
+        retry.title = "Ask this question again";
+        retry.disabled = state.loading;
+        retry.addEventListener("click", () => retryMessage(messageId));
+        row.append(retry);
+        if (meta.request_id) {
+            // Server-side detail is logged under this ID; it is never sent to the browser.
+            const refChip = document.createElement("span");
+            refChip.className = "chip";
+            refChip.textContent = `Reference: ${meta.request_id}`;
+            row.append(refChip);
+        }
+        container.append(row);
     }
 
     const hasSources =
@@ -516,6 +525,33 @@ function renderAnswerText(body, text, messageId, passages) {
     });
 }
 
+// A failed answer (not a decline or an empty result) can be asked again.
+function isRetryable(meta) {
+    return Boolean(meta && meta.success === false && meta.error);
+}
+
+function retryMessage(messageId) {
+    const thread = getActiveThread();
+    if (!thread || state.loading) {
+        return;
+    }
+    const index = thread.messages.findIndex((m) => m.id === messageId);
+    if (index < 0) {
+        return;
+    }
+    const failed = thread.messages[index];
+    const previous = index > 0 ? thread.messages[index - 1] : null;
+    const askedBefore = previous && previous.role === "user" ? previous : null;
+    const question = (failed.meta && failed.meta.question) || (askedBefore && askedBefore.content);
+    if (!question) {
+        return;
+    }
+    // Replace the failed exchange instead of repeating it in the thread.
+    thread.messages.splice(askedBefore ? index - 1 : index, askedBefore ? 2 : 1);
+    saveState();
+    sendMessage(question);
+}
+
 function showSourceCard(messageId, number) {
     const card = document.getElementById(sourceCardId(messageId, number));
     if (!card) {
@@ -607,6 +643,9 @@ function updateExampleStripVisibility() {
 function toggleLoading(value) {
     state.loading = value;
     el.newChatButton.disabled = value;
+    for (const button of document.querySelectorAll(".retry-button")) {
+        button.disabled = value;
+    }
     el.sendButton.disabled = value;
     el.sendButton.classList.toggle("hidden", value);
     el.stopButton.classList.toggle("hidden", !value);
@@ -668,7 +707,7 @@ async function sendMessage(message) {
                 requestThreadId,
                 "assistant",
                 `You have asked a lot of questions in a short time.${wait}`,
-                { success: false, route: "SYSTEM", query_language: "en", error: "Rate limited (HTTP 429)" }
+                { success: false, route: "SYSTEM", query_language: "en", error: "rate_limited", question: text }
             );
             return;
         }
@@ -693,27 +732,36 @@ async function sendMessage(message) {
                 quick_facts: payload.quick_facts,
                 sources: payload.sources,
                 request_id: payload.request_id,
+                error: payload.error || null,
+                question: text,
             }
         );
     } catch (error) {
         const isAborted = error instanceof DOMException && error.name === "AbortError";
         if (isAborted) {
-            appendMessageToThread(requestThreadId, "assistant", "Stopped processing this query.", {
+            appendMessageToThread(requestThreadId, "assistant", "Stopped before an answer was ready.", {
                 success: false,
                 route: "SYSTEM",
                 query_language: "en",
-                error: "Request stopped by user",
+                error: "stopped",
+                question: text,
             });
         } else {
+            // The detail goes to the console for debugging, not into the chat.
+            console.error("chat request failed", error);
+            const offline = typeof navigator !== "undefined" && navigator.onLine === false;
             appendMessageToThread(
                 requestThreadId,
                 "assistant",
-                "I could not process your request right now. Please retry in a moment.",
+                offline
+                    ? "You appear to be offline, so the question was not sent."
+                    : "Something went wrong while answering this question.",
                 {
                     success: false,
                     route: "SYSTEM",
                     query_language: "en",
-                    error: error instanceof Error ? error.message : String(error),
+                    error: offline ? "offline" : "request_failed",
+                    question: text,
                 }
             );
         }
