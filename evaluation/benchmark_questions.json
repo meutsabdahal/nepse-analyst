@@ -189,25 +189,6 @@
             "notes": "Average of per-row turnover over the 30 most recent trading dates in price_history."
         },
         {
-            "id": "Q5",
-            "question": "Which companies have shown consistent EPS growth for 3 consecutive fiscal years?",
-            "tables_used": [
-                "fundamentals"
-            ],
-            "difficulty": "hard",
-            "ground_truth": {
-                "snapshot_at": "2026-11-19",
-                "row_count": 0,
-                "rows": [],
-                "status": "data_unavailable"
-            },
-            "ground_truth_sql": "WITH yearly AS (SELECT symbol, CAST(SUBSTR(fiscal_year,1,4) AS INT) AS fy_start, eps FROM fundamentals WHERE eps IS NOT NULL), seq AS (SELECT symbol, fy_start, eps, LAG(eps,1) OVER w AS eps_prev1, LAG(fy_start,1) OVER w AS fy_prev1, LAG(eps,2) OVER w AS eps_prev2, LAG(fy_start,2) OVER w AS fy_prev2 FROM yearly WINDOW w AS (PARTITION BY symbol ORDER BY fy_start)) SELECT DISTINCT symbol FROM seq WHERE fy_prev1 = fy_start - 1 AND fy_prev2 = fy_start - 2 AND eps > eps_prev1 AND eps_prev1 > eps_prev2 ORDER BY symbol",
-            "match_columns": [
-                "symbol"
-            ],
-            "notes": "EPS strictly increasing across 3 consecutive fiscal years (two year-on-year increases). The previous reference SQL listed every non-null EPS row. No symbol has 3+ fiscal years of EPS in the 2026-11-17 data, so the reference result is empty."
-        },
-        {
             "id": "Q7",
             "question": "Compare total bonus shares issued by the banking sector vs. the hydropower sector in FY 2080/81.",
             "tables_used": [
@@ -410,6 +391,20 @@
         }
     ],
     "deferred_sql_benchmark": [
+        {
+            "id": "Q5",
+            "question": "Which companies have shown consistent EPS growth for 3 consecutive fiscal years?",
+            "tables_used": [
+                "fundamentals"
+            ],
+            "difficulty": "hard",
+            "ground_truth_sql": "WITH yearly AS (SELECT symbol, CAST(SUBSTR(fiscal_year,1,4) AS INT) AS fy_start, eps FROM fundamentals WHERE eps IS NOT NULL), seq AS (SELECT symbol, fy_start, eps, LAG(eps,1) OVER w AS eps_prev1, LAG(fy_start,1) OVER w AS fy_prev1, LAG(eps,2) OVER w AS eps_prev2, LAG(fy_start,2) OVER w AS fy_prev2 FROM yearly WINDOW w AS (PARTITION BY symbol ORDER BY fy_start)) SELECT DISTINCT symbol FROM seq WHERE fy_prev1 = fy_start - 1 AND fy_prev2 = fy_start - 2 AND eps > eps_prev1 AND eps_prev1 > eps_prev2 ORDER BY symbol",
+            "match_columns": [
+                "symbol"
+            ],
+            "notes": "Removed from scoring on 2026-11-19 (see deferred_reason). The reference SQL is still tested in tests/test_benchmark_eval.py.",
+            "deferred_reason": "No source for historical fundamentals: Merolagani's company page shows only the latest fiscal year's EPS, P/E and book value, so fundamentals hold one fiscal year per company. The fundamentals step now keeps earlier years between builds, so history accumulates one year at a time. Restore this case once some companies have EPS for three consecutive fiscal years."
+        },
         {
             "id": "Q6",
             "question": "What are the top 5 most oversubscribed IPOs in NEPSE history?",

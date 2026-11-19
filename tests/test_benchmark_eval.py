@@ -9,7 +9,8 @@ from nepse_analyst.evaluation import answer_mentions, lenient_score, strict_matc
 BENCHMARK = json.loads(
     (Path(__file__).resolve().parents[1] / "evaluation" / "benchmark_questions.json").read_text(encoding="utf-8")
 )
-CASES = {c["id"]: c for c in BENCHMARK["sql_benchmark"]}
+# Deferred cases are included so their reference SQL stays tested until they are restored.
+CASES = {c["id"]: c for c in BENCHMARK["sql_benchmark"] + BENCHMARK.get("deferred_sql_benchmark", [])}
 
 
 class StrictMatchTests(unittest.TestCase):

@@ -579,6 +579,7 @@ class Loader:
         fundamentals: list[tuple] = []
         dividends: list[tuple] = []
         errors: list[str] = []
+        fetched: list[str] = []
         for i, symbol in enumerate(symbols, start=1):
             try:
                 f_rows, d_rows = source.fetch_fundamentals(symbol)
@@ -586,6 +587,7 @@ class Loader:
                 errors.append(symbol)
                 print(f"[ERROR] {symbol}: {exc}")
                 continue
+            fetched.append(symbol)
             fundamentals.extend(
                 (f.symbol, f.fiscal_year, f.eps, f.pe_ratio, f.book_value, f.roe,
                  f.net_profit, f.total_assets, f.revenue)
@@ -609,10 +611,13 @@ class Loader:
                 ON dividends(symbol, fiscal_year);
                 """
             )
-            if symbols:
-                ph = ",".join("?" * len(symbols))
-                conn.execute(f"DELETE FROM fundamentals WHERE symbol IN ({ph})", symbols)
-                conn.execute(f"DELETE FROM dividends WHERE symbol IN ({ph})", symbols)
+            # Fundamentals are upserted, never cleared: the source shows only the latest
+            # fiscal year, so earlier builds' years are the only history there is.
+            # Dividends come with their full history, so a fetched symbol's rows are
+            # replaced. Symbols whose fetch failed keep what they had.
+            if fetched:
+                ph = ",".join("?" * len(fetched))
+                conn.execute(f"DELETE FROM dividends WHERE symbol IN ({ph})", fetched)
             # Drop rows an earlier build stored for excluded sectors; they are never re-fetched.
             purged = 0
             for table in ("fundamentals", "dividends"):
@@ -627,10 +632,13 @@ class Loader:
                     net_profit, total_assets, revenue)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, fiscal_year) DO UPDATE SET
-                    eps = excluded.eps, pe_ratio = excluded.pe_ratio,
-                    book_value = excluded.book_value, roe = excluded.roe,
-                    net_profit = excluded.net_profit, total_assets = excluded.total_assets,
-                    revenue = excluded.revenue
+                    eps = COALESCE(excluded.eps, eps),
+                    pe_ratio = COALESCE(excluded.pe_ratio, pe_ratio),
+                    book_value = COALESCE(excluded.book_value, book_value),
+                    roe = COALESCE(excluded.roe, roe),
+                    net_profit = COALESCE(excluded.net_profit, net_profit),
+                    total_assets = COALESCE(excluded.total_assets, total_assets),
+                    revenue = COALESCE(excluded.revenue, revenue)
                 """,
                 fundamentals,
             )

@@ -80,12 +80,17 @@ class FakeFundamentals:
 
     def __init__(self):
         self.calls = []
+        self.fiscal_year = "2081/82"
+        self.values = {"eps": 25.0}
+        self.failing: set[str] = set()
 
     def fetch_fundamentals(self, symbol):
         self.calls.append(symbol)
+        if symbol in self.failing:
+            raise RuntimeError("upstream error")
         return (
-            [Fundamental(symbol, "2081/82", eps=25.0)],
-            [Dividend(symbol, "2081/82", cash_dividend=10.0)],
+            [Fundamental(symbol, self.fiscal_year, **self.values)],
+            [Dividend(symbol, self.fiscal_year, cash_dividend=10.0)],
         )
 
 
@@ -185,6 +190,31 @@ class LoaderTests(unittest.TestCase):
         self.loader.run(["companies", "prices"])
         self.loader.run(["companies"])
         self.assertEqual(self.query("SELECT market_cap FROM companies WHERE symbol='NABIL'"), [(51000.0,)])
+
+    def test_fundamentals_keep_earlier_fiscal_years(self):
+        self.loader.run(["companies", "fundamentals"])
+        self.fundamentals.fiscal_year, self.fundamentals.values = "2082/83", {"eps": 30.0}
+        self.loader.run(["fundamentals"])
+        self.assertEqual(
+            self.query("SELECT fiscal_year, eps FROM fundamentals WHERE symbol='NABIL' ORDER BY fiscal_year"),
+            [("2081/82", 25.0), ("2082/83", 30.0)],
+        )
+
+    def test_fundamentals_upsert_does_not_erase_values_with_nulls(self):
+        self.loader.run(["companies", "fundamentals"])
+        self.fundamentals.values = {"eps": None, "pe_ratio": 12.0}
+        self.loader.run(["fundamentals"])
+        self.assertEqual(
+            self.query("SELECT eps, pe_ratio FROM fundamentals WHERE symbol='NABIL'"), [(25.0, 12.0)]
+        )
+
+    def test_failed_fetch_keeps_existing_rows(self):
+        self.loader.run(["companies", "fundamentals"])
+        self.fundamentals.failing = {"NABIL"}
+        result = self.loader.run(["fundamentals"])["fundamentals"]
+        self.assertEqual(result["errors"], 1)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM fundamentals WHERE symbol='NABIL'"), [(1,)])
+        self.assertEqual(self.query("SELECT COUNT(*) FROM dividends WHERE symbol='NABIL'"), [(1,)])
 
     def test_fundamentals_purges_rows_stored_for_excluded_sectors(self):
         self.loader.run(["companies"])
