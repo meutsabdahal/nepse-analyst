@@ -199,6 +199,11 @@ MESSAGES: dict[str, dict[str, str]] = {
             "कृपया प्रश्नलाई अझ सानो वा स्पष्ट बनाएर फेरि प्रयास गर्नुहोस्।"
         ),
     },
+    # -- progress stages (shown while a question is being answered) ---------
+    "stage_understanding": {"en": "Understanding the question", "ne": "प्रश्न बुझ्दै"},
+    "stage_querying_database": {"en": "Querying the database", "ne": "डाटाबेसबाट जानकारी खोज्दै"},
+    "stage_searching_news": {"en": "Searching the news", "ne": "समाचार खोज्दै"},
+    "stage_writing_answer": {"en": "Writing the answer", "ne": "उत्तर लेख्दै"},
     "unexpected_error": {
         "en": "Something went wrong while answering this question. Please try again in a moment.",
         "ne": "यो प्रश्नको उत्तर दिँदा समस्या आयो। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।",

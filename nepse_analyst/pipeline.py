@@ -3,10 +3,11 @@ import re
 import time
 from datetime import datetime
 
-from nepse_analyst import deadline, llm
+from nepse_analyst import deadline, llm, progress
 from nepse_analyst.config import NEWS_STALE_DAYS, REQUEST_TIMEOUT_SEC, TOP_K_RAG
 from nepse_analyst.database import get_connection
 from nepse_analyst.guardrails import build_decline_response
+from nepse_analyst.language_detector import detect_language
 from nepse_analyst.messages import message
 from nepse_analyst.prompts import (
     build_direct_prompt,
@@ -566,6 +567,7 @@ def _first_rule_answer(query: str, language: str, entities: dict) -> dict | None
 
 def _handle_sql(query: str, language: str, entities: dict) -> dict:
     """Execute the Text-to-SQL pathway."""
+    progress.report(progress.QUERYING_DATABASE, language)
     coverage = _build_dividend_sector_coverage_fallback(query, language)
     if coverage:
         return _rule_response("rule:dividend_sector_coverage", coverage, language)
@@ -598,6 +600,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
             return _rule_response("rule:price_range_52w", price_range, language)
 
     # Synthesise natural language answer from SQL result
+    progress.report(progress.WRITING_ANSWER, language)
     synthesis_prompt = build_sql_synthesis_prompt(
         query=query,
         sql=result["sql"],
@@ -629,6 +632,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
             "RAG", language, "", success=False,
             error="News search skipped: request time limit reached",
         )
+    progress.report(progress.SEARCHING_NEWS, language)
     # Detected company/sector ranks matching articles higher; it does not filter.
     try:
         passages = search(
@@ -649,6 +653,7 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
             data_freshness=_get_news_freshness(), error="No passages retrieved",
         )
 
+    progress.report(progress.WRITING_ANSWER, language)
     synthesis_prompt = build_rag_synthesis_prompt(query, passages, language)
     try:
         answer = llm.call(synthesis_prompt, temperature=0.1)
@@ -697,6 +702,7 @@ def _handle_hybrid(query: str, language: str, entities: dict) -> dict:
 
 def _handle_direct(query: str, language: str) -> dict:
     """Handle general knowledge questions about NEPSE that need no data retrieval."""
+    progress.report(progress.WRITING_ANSWER, language)
     prompt = build_direct_prompt(query, language)
     answer = llm.call(prompt, temperature=0.2)  # slight temperature for more natural prose
     return _response("DIRECT", language, answer)
@@ -752,6 +758,7 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
         return empty
 
     # Step 1 — Classify and route
+    progress.report(progress.UNDERSTANDING, detect_language(query))
     routing = classify(query)
     route = routing["route"]
     language = routing["language"]

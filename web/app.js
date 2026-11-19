@@ -6,6 +6,8 @@ const state = {
     loading: false,
     abortController: null,
     pendingThreadId: null,
+    progressTimer: null,
+    progressStartedAt: 0,
     stopRequested: false,
 };
 
@@ -21,6 +23,8 @@ const el = {
     sendButton: document.getElementById("sendButton"),
     stopButton: document.getElementById("stopButton"),
     typingIndicator: document.getElementById("typingIndicator"),
+    progressStage: document.getElementById("progressStage"),
+    progressElapsed: document.getElementById("progressElapsed"),
     exampleStrip: document.getElementById("exampleStrip"),
     messageTemplate: document.getElementById("messageTemplate"),
 };
@@ -660,11 +664,85 @@ function toggleLoading(value) {
     }
     el.clearThreadsButton.disabled = value || state.threads.length === 0;
     el.typingIndicator.classList.toggle("hidden", !value);
+    if (value) {
+        startProgress();
+    } else {
+        stopProgress();
+    }
 }
 
 function autoResizeComposer() {
     el.composerInput.style.height = "auto";
     el.composerInput.style.height = Math.min(el.composerInput.scrollHeight, 220) + "px";
+}
+
+// The stream is newline-delimited JSON: stage events, then one answer event.
+async function readChatStream(response, onStage) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let answer = null;
+    const handle = (line) => {
+        if (!line.trim()) {
+            return;
+        }
+        const event = JSON.parse(line);
+        if (event.type === "stage") {
+            onStage(event);
+        } else if (event.type === "answer") {
+            answer = event.data;
+        }
+    };
+    for (;;) {
+        const { value, done } = await reader.read();
+        if (done) {
+            break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+            handle(buffer.slice(0, newline));
+            buffer = buffer.slice(newline + 1);
+        }
+    }
+    handle(buffer + decoder.decode());
+    if (!answer) {
+        throw new Error("The answer stream ended before the answer arrived");
+    }
+    return answer;
+}
+
+function formatElapsed(ms) {
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) {
+        return `${seconds} s`;
+    }
+    return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, "0")} s`;
+}
+
+function setProgressStage(label) {
+    if (label) {
+        el.progressStage.textContent = label;
+    }
+}
+
+function tickProgress() {
+    el.progressElapsed.textContent = `· ${formatElapsed(performance.now() - state.progressStartedAt)}`;
+}
+
+function startProgress() {
+    stopProgress();
+    state.progressStartedAt = performance.now();
+    setProgressStage("Sending your question");
+    tickProgress();
+    state.progressTimer = setInterval(tickProgress, 1000);
+}
+
+function stopProgress() {
+    if (state.progressTimer !== null) {
+        clearInterval(state.progressTimer);
+        state.progressTimer = null;
+    }
 }
 
 async function sendMessage(message) {
@@ -687,7 +765,7 @@ async function sendMessage(message) {
     state.pendingThreadId = requestThreadId;
 
     try {
-        const response = await fetch("/api/chat", {
+        const response = await fetch("/api/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: text }),
@@ -716,7 +794,7 @@ async function sendMessage(message) {
             throw new Error(`Request failed with status ${response.status}`);
         }
 
-        const payload = await response.json();
+        const payload = await readChatStream(response, (event) => setProgressStage(event.label));
         appendMessageToThread(
             requestThreadId,
             "assistant",

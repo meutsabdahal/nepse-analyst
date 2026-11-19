@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import json
 import logging
+import queue
+import threading
 import time
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from nepse_analyst import __version__
+from nepse_analyst import __version__, progress
 from nepse_analyst.chat_helpers import (
     answer_basis,
     build_passage_preview,
@@ -102,12 +106,15 @@ def example_questions() -> dict[str, list[str]]:
     return {"examples": EXAMPLE_QUESTIONS}
 
 
-@app.post("/api/chat", dependencies=[Depends(enforce_chat_rate_limit)])
-def chat(payload: ChatRequest) -> dict[str, Any]:
+def _question(payload: ChatRequest) -> str:
     query = payload.message.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    return query
 
+
+def answer_question(query: str) -> dict[str, Any]:
+    """Run one question through the pipeline and build the chat response."""
     request_id = str(uuid4())
     started = time.perf_counter()
     try:
@@ -163,6 +170,51 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         "error": public_error(result),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.post("/api/chat", dependencies=[Depends(enforce_chat_rate_limit)])
+def chat(payload: ChatRequest) -> dict[str, Any]:
+    return answer_question(_question(payload))
+
+
+@app.post("/api/chat/stream", dependencies=[Depends(enforce_chat_rate_limit)])
+def chat_stream(payload: ChatRequest) -> StreamingResponse:
+    """The same answer as /api/chat, preceded by progress stages.
+
+    The body is newline-delimited JSON: ``{"type": "stage", "stage", "label"}``
+    lines as the pipeline moves on, then one ``{"type": "answer", "data"}``
+    line holding the /api/chat response.
+    """
+    query = _question(payload)
+    events: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+
+    def on_stage(stage: str, label: str) -> None:
+        events.put({"type": "stage", "stage": stage, "label": label})
+
+    def work() -> None:
+        try:
+            with progress.reporting(on_stage):
+                data = answer_question(query)
+        except Exception:  # answer_question handles pipeline errors; this is a last resort
+            logger.exception("chat_stream_error")
+            data = {"success": False, "answer": message("unexpected_error", "en"), "error": "request_failed"}
+        events.put({"type": "answer", "data": data})
+
+    threading.Thread(target=work, name="chat-stream", daemon=True).start()
+
+    def lines() -> Iterator[str]:
+        while True:
+            event = events.get()
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+            if event["type"] == "answer":
+                return
+
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        # Ask proxies not to buffer, so each stage reaches the browser at once.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":

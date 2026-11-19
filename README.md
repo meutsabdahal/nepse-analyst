@@ -169,7 +169,7 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 ### Deploying publicly
 
-Every `/api/chat` request can make several LLM calls, which cost credits with Groq or Hugging Face. The endpoint is rate limited per client IP: `CHAT_RATE_LIMIT_PER_MINUTE` (default 10) and `CHAT_RATE_LIMIT_PER_DAY` (default 200). Over the limit it returns HTTP 429 with a `Retry-After` header.
+Every `/api/chat` or `/api/chat/stream` request can make several LLM calls, which cost credits with Groq or Hugging Face. The endpoint is rate limited per client IP: `CHAT_RATE_LIMIT_PER_MINUTE` (default 10) and `CHAT_RATE_LIMIT_PER_DAY` (default 200). Over the limit it returns HTTP 429 with a `Retry-After` header.
 
 - **Behind a reverse proxy or load balancer**, every request arrives from the proxy's address, so all users would share one limit. Tell uvicorn to trust the proxy so the client address comes from `X-Forwarded-For`: `uvicorn app:app --proxy-headers --forwarded-allow-ips=<proxy IP or range>`. The app itself never reads forwarding headers, since any client can send them.
 - **Counts are kept in memory per process.** With several uvicorn workers or instances, each counts separately, so the effective limit is multiplied by their number, and counts reset on restart. For that setup, rate limit at the proxy or move the counts to a shared store such as Redis.
@@ -207,6 +207,7 @@ Loader(sources).run(["prices", "indices"])
 - `GET /api/health`: Service health probe.
 - `GET /api/example-questions`: Example prompt list.
 - `POST /api/chat`: Query endpoint.
+- `POST /api/chat/stream`: The same answer, preceded by progress stages. The body is newline-delimited JSON: `{"type": "stage", "stage": "querying_database", "label": "Querying the database"}` lines as the question moves on (`understanding`, `querying_database`, `searching_news`, `writing_answer`), then one `{"type": "answer", "data": {...}}` line holding the `/api/chat` response. The web interface uses this endpoint.
 
 Sample request:
 
