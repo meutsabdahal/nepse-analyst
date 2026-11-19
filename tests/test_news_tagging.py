@@ -13,6 +13,7 @@ COMPANIES = [
     ("MEN", "Mountain Energy Nepal Limited", "Hydropower"),
     ("LEC", "Liberty Energy Company Limited", "Hydropower"),
     ("API", "Api Power Company Ltd.", "Hydropower"),
+    ("SEBON", "Securities Board of Nepal", "Trading"),
     ("NABIL", "Nabil Bank Limited", "Commercial Banks"),
     ("NABILP", "Nabil Bank Limited Promoter Share", "Others"),
     ("EBLPO", "Everest Bank Limited Promoter Share", "Promoter Shares"),
@@ -67,6 +68,20 @@ class CompanyMatcherTests(unittest.TestCase):
     def test_promoter_shares_are_not_tagged(self):
         self.assertEqual(self.m.match("NABILP auction announced"), [])
         self.assertEqual(self.m.match("EBLPO auction announced"), [])
+
+    def test_ambiguous_symbols_need_name_or_market_context(self):
+        untagged = [
+            "SEBON issues new directive for brokers",
+            "Securities Board of Nepal approves three IPOs",
+            "NEPSE API outage halts online trading",
+        ]
+        for text in untagged:
+            with self.subTest(text=text):
+                self.assertEqual(self.m.match(text), [])
+        self.assertEqual(self.m.match("Api Power reports higher profit"), ["API"])
+        self.assertEqual(self.m.match("API shares hit the upper circuit"), ["API"])
+        self.assertEqual(self.m.match("Investors bought shares of API today"), ["API"])
+        self.assertEqual(self.m.match("SEBON shares to be auctioned"), ["SEBON"])
 
     def test_symbol_ending_in_p_is_tagged_when_not_a_promoter_share(self):
         self.assertEqual(self.m.match("NADEP declares dividend"), ["NADEP"])

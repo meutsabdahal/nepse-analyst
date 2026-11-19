@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from nepse_analyst import ambiguous_symbols
 from nepse_analyst.config import (
     DB_PATH,
     MAX_ARTICLES,
@@ -136,7 +137,9 @@ class CompanyMatcher:
 
     Symbols match case-sensitively ("MEN" but not "INVESTMENT" or "men"),
     names match case-insensitively on their core words ("Nabil Bank").
-    Debentures, bonds and promoter shares are not tagged.
+    Debentures, bonds and promoter shares are not tagged. Symbols that are also
+    ordinary words (``ambiguous_symbols``) need their name phrase or market
+    context, and are not tagged by the generic name rule.
     """
 
     def __init__(self, companies: Iterable[tuple[str, str, str]]) -> None:
@@ -149,7 +152,11 @@ class CompanyMatcher:
                 continue
             self._sector[symbol] = sector
             symbol_alts.append(re.escape(symbol))
-            if core := self._core_name_pattern(name):
+            if symbol in ambiguous_symbols.AMBIGUOUS_SYMBOLS:
+                core = ambiguous_symbols.name_phrase(symbol)
+            else:
+                core = self._core_name_pattern(name)
+            if core:
                 name_patterns.append((core, symbol))
         # Longest first so "NICA" wins over "NIC" at the same position.
         symbol_alts.sort(key=len, reverse=True)
@@ -187,6 +194,8 @@ class CompanyMatcher:
                 symbol = m.group(1)
                 # "NIC" inside "NIC Asia Bank" belongs to NICA, not to NIC.
                 if any(a <= m.start() and m.end() <= b and owner != symbol for a, b, owner in name_spans):
+                    continue
+                if not ambiguous_symbols.mention_counts(symbol, text, m.start(), m.end()):
                     continue
                 first_pos.setdefault(symbol, m.start())
                 first_pos[symbol] = min(first_pos[symbol], m.start())

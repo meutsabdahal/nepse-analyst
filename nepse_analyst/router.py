@@ -1,5 +1,5 @@
 import re
-from nepse_analyst import llm
+from nepse_analyst import ambiguous_symbols, llm
 from nepse_analyst.guardrails import get_guardrail_type
 from nepse_analyst.language_detector import detect_language
 from nepse_analyst.database import get_connection
@@ -82,8 +82,12 @@ def extract_entities(query: str) -> dict:
     # Symbol detection — check if any known symbol appears in the query
     detected_symbol = None
     for symbol in _get_symbols():
-        # Match as whole word to avoid partial matches (e.g. 'NIC' inside 'NICA')
-        if re.search(r"\b" + re.escape(symbol) + r"\b", q_upper):
+        # Match as whole word to avoid partial matches (e.g. 'NIC' inside 'NICA').
+        # Symbols that are also ordinary words need the name or market context.
+        if any(
+            ambiguous_symbols.mention_counts(symbol, query, m.start(), m.end())
+            for m in re.finditer(r"\b" + re.escape(symbol) + r"\b", q_upper)
+        ):
             detected_symbol = symbol
             break
 
