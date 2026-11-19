@@ -33,6 +33,7 @@ from nepse_analyst.config import (
 from nepse_analyst.database import FULL_SCHEMA_SQL
 from nepse_analyst.ingestion.records import NewsArticle
 from nepse_analyst.news_tags import tag_metadata
+from nepse_analyst.sectors import FUNDAMENTALS_EXCLUDED_SECTORS
 from nepse_analyst.ingestion.sources.base import (
     CompanySource,
     FundamentalsSource,
@@ -42,9 +43,6 @@ from nepse_analyst.ingestion.sources.base import (
 )
 
 STEPS: tuple[str, ...] = ("companies", "prices", "indices", "fundamentals", "ipos", "news")
-
-# Instrument classes without comparable company fundamentals.
-FUNDAMENTALS_EXCLUDED_SECTORS = ("Govt. Bonds", "Mutual Fund", "Corp. Debentures")
 
 PRICE_BATCH_SIZE = 500
 MAX_CONSECUTIVE_PRICE_FAILURES = 25
@@ -615,6 +613,14 @@ class Loader:
                 ph = ",".join("?" * len(symbols))
                 conn.execute(f"DELETE FROM fundamentals WHERE symbol IN ({ph})", symbols)
                 conn.execute(f"DELETE FROM dividends WHERE symbol IN ({ph})", symbols)
+            # Drop rows an earlier build stored for excluded sectors; they are never re-fetched.
+            purged = 0
+            for table in ("fundamentals", "dividends"):
+                purged += conn.execute(
+                    f"DELETE FROM {table} WHERE symbol IN "
+                    f"(SELECT symbol FROM companies WHERE sector IN ({placeholders}))",
+                    FUNDAMENTALS_EXCLUDED_SECTORS,
+                ).rowcount
             conn.executemany(
                 """
                 INSERT INTO fundamentals (symbol, fiscal_year, eps, pe_ratio, book_value, roe,
@@ -647,6 +653,7 @@ class Loader:
             "symbols": len(symbols),
             "fundamentals_rows": len(fundamentals),
             "dividend_rows": len(dividends),
+            "excluded_sector_rows_purged": purged,
             "errors": len(errors),
         }
 

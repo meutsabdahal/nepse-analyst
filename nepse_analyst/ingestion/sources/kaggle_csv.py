@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from nepse_analyst import sectors
 from nepse_analyst.config import BASE_DIR
 from nepse_analyst.ingestion.records import Company
 
@@ -21,25 +22,25 @@ _COLUMN_MAPPING = {
     "total_paidup": "total_paid_up",
 }
 
-# Kaggle sector labels -> PRD sector names.
+# Kaggle sector labels -> canonical sector names.
 SECTOR_MAP = {
-    "Commercial Banks": "Commercial Banks",
-    "Hydro Power": "Hydropower",
-    "Life Insurance": "Life Insurance",
-    "Development Bank Limited": "Development Banks",
-    "Finance": "Finance Companies",
-    "Microfinance": "Microfinance",
-    "Non-Life Insurance": "Non-Life Insurance",
-    "Hotels And Tourism": "Hotels & Tourism",
-    "Manufacturing And Processing": "Manufacturing",
-    "Tradings": "Trading",
-    "Mutual Fund": "Mutual Funds",
-    "Investment": "Investment",
-    "Others": "Others",
-    "Corporate Debenture": "Corp. Debentures",
-    "Government Bond": "Govt. Bonds",
-    "Capital": "Others",
-    "Promotor Share": "Others",
+    "Commercial Banks": sectors.COMMERCIAL_BANKS,
+    "Hydro Power": sectors.HYDROPOWER,
+    "Life Insurance": sectors.LIFE_INSURANCE,
+    "Development Bank Limited": sectors.DEVELOPMENT_BANKS,
+    "Finance": sectors.FINANCE_COMPANIES,
+    "Microfinance": sectors.MICROFINANCE,
+    "Non-Life Insurance": sectors.NON_LIFE_INSURANCE,
+    "Hotels And Tourism": sectors.HOTELS_AND_TOURISM,
+    "Manufacturing And Processing": sectors.MANUFACTURING,
+    "Tradings": sectors.TRADING,
+    "Mutual Fund": sectors.MUTUAL_FUNDS,
+    "Investment": sectors.INVESTMENT,
+    "Others": sectors.OTHERS,
+    "Corporate Debenture": sectors.CORPORATE_DEBENTURES,
+    "Government Bond": sectors.GOVERNMENT_BONDS,
+    "Capital": sectors.OTHERS,
+    "Promotor Share": sectors.OTHERS,
 }
 
 
@@ -74,7 +75,10 @@ class KaggleCsvCompanySource:
         for col in ("symbol", "name", "sector"):
             df[col] = df[col].astype(str).str.strip()
         df["symbol"] = df["symbol"].str.upper()
-        df["sector"] = df["sector"].replace(SECTOR_MAP)
+        unmapped = sorted(set(df["sector"]) - SECTOR_MAP.keys())
+        if unmapped:
+            raise ValueError(f"Unmapped sector labels in {self.csv_path.name}: {unmapped}")
+        df["sector"] = df["sector"].map(SECTOR_MAP)
         for col in ("listed_shares", "paid_up_value", "total_paid_up"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.drop_duplicates(subset=["symbol"], keep="first")

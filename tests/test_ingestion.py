@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
+from nepse_analyst import sectors
 from nepse_analyst.ingestion import Loader, Sources
 from nepse_analyst.ingestion.records import (
     Company,
@@ -21,7 +22,7 @@ from nepse_analyst.ingestion.parsing import canonical_index_name
 from nepse_analyst.ingestion.sources.base import PriceSource
 from nepse_analyst.ingestion.sources.fallback import FallbackPriceSource
 from nepse_analyst.ingestion.sources.github_open_data import GitHubOpenDataSource
-from nepse_analyst.ingestion.sources.kaggle_csv import KaggleCsvCompanySource
+from nepse_analyst.ingestion.sources.kaggle_csv import SECTOR_MAP, KaggleCsvCompanySource
 from nepse_analyst.ingestion.sources.merolagani import (
     normalize_fiscal_year,
     parse_dividends,
@@ -34,10 +35,10 @@ class FakeCompanies:
 
     def fetch_companies(self):
         return [
-            Company("NABIL", "Nabil Bank Limited", "Commercial Banks", 100),
-            Company("NABILP", "Nabil Bank Limited Promoter Share", "Others", 10),
-            Company("AHPC", "Arun Valley Hydropower Development Co. Ltd.", "Hydropower", 50),
-            Company("NBF2", "Nabil Balanced Fund 2", "Mutual Fund", 5),
+            Company("NABIL", "Nabil Bank Limited", sectors.COMMERCIAL_BANKS, 100),
+            Company("NABILP", "Nabil Bank Limited Promoter Share", sectors.OTHERS, 10),
+            Company("AHPC", "Arun Valley Hydropower Development Co. Ltd.", sectors.HYDROPOWER, 50),
+            Company("NBF2", "Nabil Balanced Fund 2", sectors.MUTUAL_FUNDS, 5),
         ]
 
 
@@ -185,6 +186,20 @@ class LoaderTests(unittest.TestCase):
         self.loader.run(["companies"])
         self.assertEqual(self.query("SELECT market_cap FROM companies WHERE symbol='NABIL'"), [(51000.0,)])
 
+    def test_fundamentals_purges_rows_stored_for_excluded_sectors(self):
+        self.loader.run(["companies"])
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO fundamentals (symbol, fiscal_year, eps) VALUES ('NBF2', '2081/82', 0.0)")
+        conn.execute("INSERT INTO dividends (symbol, fiscal_year, cash_dividend) VALUES ('NBF2', '2081/82', 5.0)")
+        conn.commit()
+        conn.close()
+
+        result = self.loader.run(["fundamentals"])["fundamentals"]
+
+        self.assertEqual(result["excluded_sector_rows_purged"], 2)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM fundamentals WHERE symbol='NBF2'"), [(0,)])
+        self.assertEqual(self.query("SELECT COUNT(*) FROM dividends WHERE symbol='NBF2'"), [(0,)])
+
     def test_unavailable_price_source_fails_before_deleting_prices(self):
         self.loader.run(["companies", "prices"])
         self.prices.ok = False
@@ -210,6 +225,23 @@ class KaggleCsvTests(unittest.TestCase):
             adbl, gicl = KaggleCsvCompanySource(path).fetch_companies()
         self.assertEqual((adbl.listed_shares, adbl.paid_up_value, adbl.total_paid_up), (134516741, 100.0, 13187915800.0))
         self.assertEqual((gicl.listed_shares, gicl.paid_up_value, gicl.total_paid_up), (None, None, None))
+
+    def test_sector_map_targets_canonical_sectors(self):
+        self.assertLessEqual(set(SECTOR_MAP.values()), set(sectors.ALL_SECTORS))
+        self.assertLessEqual(set(sectors.FUNDAMENTALS_EXCLUDED_SECTORS), set(sectors.ALL_SECTORS))
+
+    def test_bundled_csv_maps_every_sector_label(self):
+        found = {c.sector for c in KaggleCsvCompanySource().fetch_companies()}
+        self.assertLessEqual(found, set(sectors.ALL_SECTORS))
+        self.assertIn(sectors.MUTUAL_FUNDS, found)
+
+    def test_unmapped_sector_label_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "companies.csv")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("Name,company_nmae,symbol,Listed_Shares,Paidup_Value,Total_Paidup\nCrypto,X Ltd,XLTD,0,0,0\n")
+            with self.assertRaisesRegex(ValueError, "Crypto"):
+                KaggleCsvCompanySource(path).fetch_companies()
 
     def test_bundled_csv_has_share_counts(self):
         companies = KaggleCsvCompanySource().fetch_companies()
