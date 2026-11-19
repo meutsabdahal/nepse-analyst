@@ -686,13 +686,29 @@ body {
 
 .example-strip {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 0.38rem;
     padding-top: 0.18rem;
 }
 
 .example-strip.hidden {
     display: none;
+}
+
+.example-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.38rem;
+}
+
+.example-group-label {
+    margin: 0;
+    min-width: 5.5rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8a8174;
 }
 
 .example-chip {
@@ -858,6 +874,10 @@ body {
 
     .facts-grid {
         grid-template-columns: 1fr;
+    }
+
+    .example-group-label {
+        flex-basis: 100%;
     }
 
     .composer {

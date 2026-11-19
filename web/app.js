@@ -624,17 +624,27 @@ function renderMessages() {
     el.messageFeed.scrollTop = el.messageFeed.scrollHeight;
 }
 
-function renderExamples(examples) {
-    el.exampleStrip.innerHTML = "";
-    for (const text of examples.slice(0, 8)) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "example-chip";
-        button.textContent = text;
-        button.addEventListener("click", () => {
-            sendMessage(text);
-        });
-        el.exampleStrip.append(button);
+// Every group is shown in full; the server keeps the list short.
+function renderExamples(groups) {
+    el.exampleStrip.replaceChildren();
+    for (const group of groups) {
+        const section = document.createElement("div");
+        section.className = "example-group";
+        const label = document.createElement("p");
+        label.className = "example-group-label";
+        label.textContent = group.group;
+        section.append(label);
+        for (const text of group.questions) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "example-chip";
+            button.textContent = text;
+            button.addEventListener("click", () => {
+                sendMessage(text);
+            });
+            section.append(button);
+        }
+        el.exampleStrip.append(section);
     }
 }
 
@@ -859,9 +869,8 @@ function render() {
 
 async function hydrateExamples() {
     const fallback = [
-        "Which commercial bank has the highest EPS in the latest fiscal year?",
-        "What recent news is there about NABIL?",
-        "Should I buy HIDCL right now?",
+        { group: "Companies", questions: ["What is NICA's P/E ratio?"] },
+        { group: "Concepts", questions: ["What does a P/E ratio tell an investor?"] },
     ];
 
     try {
@@ -870,7 +879,7 @@ async function hydrateExamples() {
             throw new Error("Unable to load examples");
         }
         const payload = await response.json();
-        renderExamples(Array.isArray(payload.examples) ? payload.examples : fallback);
+        renderExamples(Array.isArray(payload.groups) ? payload.groups : fallback);
     } catch {
         renderExamples(fallback);
     }

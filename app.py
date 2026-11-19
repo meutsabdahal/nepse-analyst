@@ -27,7 +27,7 @@ from nepse_analyst.chat_helpers import (
 )
 from nepse_analyst.column_labels import column_labels
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
-from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
+from nepse_analyst.example_questions import EXAMPLE_GROUPS, EXAMPLE_QUESTIONS
 from nepse_analyst.messages import message
 from nepse_analyst.pipeline import run
 from nepse_analyst.rate_limit import SlidingWindowLimiter, retry_after_header
@@ -102,8 +102,9 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/example-questions")
-def example_questions() -> dict[str, list[str]]:
-    return {"examples": EXAMPLE_QUESTIONS}
+def example_questions() -> dict[str, Any]:
+    """Example questions grouped by type; ``examples`` is the same list, flat."""
+    return {"groups": EXAMPLE_GROUPS, "examples": EXAMPLE_QUESTIONS}
 
 
 def _question(payload: ChatRequest) -> str:

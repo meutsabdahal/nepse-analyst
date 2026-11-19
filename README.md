@@ -111,7 +111,7 @@ Core package lives in `nepse_analyst/` and frontend assets live in `web/`.
 - `web/app.js`: Chat client logic.
 - `nepse_analyst/pipeline.py`: End-to-end query orchestration.
 - `nepse_analyst/chat_helpers.py`: Symbol detection and quick-facts data helpers.
-- `nepse_analyst/example_questions.py`: Example prompts for UI.
+- `nepse_analyst/example_questions.py`: Example questions for the UI, grouped by type and limited to what the current data can answer.
 - `nepse_analyst/router.py`: Query routing and entity extraction.
 - `nepse_analyst/sql_generator.py`: Text-to-SQL generation and execution.
 - `nepse_analyst/retriever.py`: ChromaDB retrieval.
@@ -205,7 +205,7 @@ Loader(sources).run(["prices", "indices"])
 
 - `GET /`: Chat web interface.
 - `GET /api/health`: Service health probe.
-- `GET /api/example-questions`: Example prompt list.
+- `GET /api/example-questions`: Example questions, as `groups` (`{"group", "questions"}`) and as a flat `examples` list.
 - `POST /api/chat`: Query endpoint.
 - `POST /api/chat/stream`: The same answer, preceded by progress stages. The body is newline-delimited JSON: `{"type": "stage", "stage": "querying_database", "label": "Querying the database"}` lines as the question moves on (`understanding`, `querying_database`, `searching_news`, `writing_answer`), then one `{"type": "answer", "data": {...}}` line holding the `/api/chat` response. The web interface uses this endpoint.
 
