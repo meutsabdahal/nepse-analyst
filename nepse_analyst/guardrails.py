@@ -1,4 +1,5 @@
 from nepse_analyst.language_detector import detect_language
+from nepse_analyst.messages import message
 import re
 
 # English prediction/advice signals
@@ -122,72 +123,14 @@ def build_decline_response(query: str, guardrail_type: str) -> dict:
     """
     lang = detect_language(query)
 
-    if guardrail_type == "prediction":
-        if lang == "ne":
-            message = (
-                "माफ गर्नुस्, NEPSE Analyst ले मूल्य भविष्यवाणी गर्दैन। "
-                "सेयरको भविष्यको मूल्य विश्वसनीय रूपमा अनुमान गर्न सम्भव छैन, "
-                "र यस्तो दाबी गर्नु लगानीकर्ताहरूलाई हानिकारक हुन सक्छ।\n\n"
-                "यसको सट्टा म यी प्रश्नहरूमा मद्दत गर्न सक्छु:\n"
-                "• कम्पनीको EPS, P/E अनुपात, र बुक भ्यालु के हो?\n"
-                "• कुन हाइड्रोपावर कम्पनीले लगातार लाभांश दिएको छ?\n"
-                "• हालैको समाचार र घोषणाहरू के छन्?"
-            )
-        else:
-            message = (
-                "NEPSE Analyst does not predict stock prices or market movements. "
-                "Price prediction cannot be done reliably, and claiming otherwise "
-                "would be misleading and potentially harmful to investors.\n\n"
-                "Here are things I *can* help you with instead:\n"
-                "• What is a company's EPS, P/E ratio, and book value?\n"
-                "• Which hydropower companies have paid consistent dividends?\n"
-                "• What are the latest news and announcements for a company?"
-            )
-
-    elif guardrail_type == "advice":
-        if lang == "ne":
-            message = (
-                "माफ गर्नुस्, NEPSE Analyst ले व्यक्तिगत लगानी सल्लाह दिँदैन। "
-                "खरिद वा बिक्रीको सिफारिश गर्नु इजाजतपत्र प्राप्त वित्तीय सल्लाहकारको "
-                "काम हो।\n\n"
-                "कुनै पनि लगानी निर्णय गर्नु अघि SEBON-दर्ता दलाल वा "
-                "वित्तीय सल्लाहकारसँग परामर्श गर्नुहोस्।\n\n"
-                "म आधारभूत अनुसन्धानमा मद्दत गर्न सक्छु — कम्पनीको वित्तीय डेटा, "
-                "क्षेत्र तुलना, र हालैका समाचारहरू।"
-            )
-        else:
-            message = (
-                "NEPSE Analyst does not provide personalised investment advice. "
-                "Buy and sell recommendations are the role of a licensed financial advisor, "
-                "not an AI research tool.\n\n"
-                "Please consult a SEBON-registered broker or financial advisor "
-                "before making any investment decisions.\n\n"
-                "I can help with fundamental research — company financial data, "
-                "sector comparisons, and recent news."
-            )
-    else:
-        if lang == "ne":
-            message = (
-                "यो प्रश्न NEPSE Analyst को सुरक्षित कार्यक्षेत्र बाहिर पर्छ, "
-                "त्यसैले म यसलाई सीधा रूपमा उत्तर दिन सक्दिनँ।\n\n"
-                "म तलका अनुसन्धान कार्यहरूमा मद्दत गर्न सक्छु:\n"
-                "• कम्पनीको EPS, P/E, र बुक भ्यालु\n"
-                "• sector तुलना र ऐतिहासिक डेटा\n"
-                "• हालको समाचार र घोषणाहरू"
-            )
-        else:
-            message = (
-                "This query is outside NEPSE Analyst's safe operating scope, "
-                "so I cannot answer it directly.\n\n"
-                "I can help with research tasks such as:\n"
-                "• Company EPS, P/E ratio, and book value\n"
-                "• Sector comparisons and historical data\n"
-                "• Recent news and announcements"
-            )
+    key = {"prediction": "decline_prediction", "advice": "decline_advice"}.get(
+        guardrail_type, "decline_out_of_scope"
+    )
+    answer = message(key, lang)
 
     return {
         "success": True,
-        "answer": message,
+        "answer": answer,
         "route": "OOS",
         "guardrail_type": guardrail_type,
         "sql": None,

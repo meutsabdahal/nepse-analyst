@@ -19,7 +19,8 @@ from nepse_analyst.chat_helpers import (
 )
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
 from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
-from nepse_analyst.pipeline import UNEXPECTED_ERROR_ANSWERS, run
+from nepse_analyst.messages import message
+from nepse_analyst.pipeline import run
 from nepse_analyst.rate_limit import SlidingWindowLimiter, retry_after_header
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -110,7 +111,7 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         logger.exception("chat_unhandled_error request_id=%s", request_id)
         result = {
             "success": False,
-            "answer": UNEXPECTED_ERROR_ANSWERS["en"],
+            "answer": message("unexpected_error", "en"),
             "answer_source": "error",
             "error": "unhandled exception (see log)",
         }

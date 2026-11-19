@@ -4,6 +4,7 @@ import re
 import time
 
 from nepse_analyst import deadline
+from nepse_analyst.messages import message
 from nepse_analyst.router import classify, price_range_metric
 from nepse_analyst.guardrails import build_decline_response
 from nepse_analyst.sql_generator import generate_and_execute
@@ -206,17 +207,7 @@ def _build_dividend_consistency_fallback(
     if len(rows) > 10:
         symbols += f", and {len(rows) - 10} more"
 
-    sector_text = sector or "the market"
-    if language == "ne":
-        answer = (
-            f"{sector_text} मा पछिल्ला {years} वर्ष लगातार लाभांश दिने कम्पनीहरू भेटिए: "
-            f"{symbols}।"
-        )
-    else:
-        answer = (
-            f"In {sector_text}, these stocks have paid dividends consistently for the last "
-            f"{years} years: {symbols}."
-        )
+    answer = message("dividend_streak", language, sector=sector or "the market", years=years, symbols=symbols)
 
     return {
         "answer": answer,
@@ -264,42 +255,23 @@ def _build_dividend_sector_coverage_fallback(query: str, language: str) -> dict 
     covered_symbols = sum(r["symbols_with_dividend_rows"] for r in rows)
     coverage_pct = (covered_symbols * 100.0 / total_symbols) if total_symbols else 0.0
 
-    if language == "ne":
-        answer = (
-            "हालको डेटासेटमा सबै sector मा dividend data उपलब्ध छैन। "
-            f"कुल coverage: {covered_symbols}/{total_symbols} symbols "
-            f"({coverage_pct:.1f}%)।"
-        )
-    else:
-        answer = (
-            "Dividend data is not available for every sector in the current dataset. "
-            f"Overall coverage is {covered_symbols}/{total_symbols} symbols "
-            f"({coverage_pct:.1f}%)."
-        )
-
+    answer = message(
+        "dividend_coverage", language, covered=covered_symbols, total=total_symbols, pct=coverage_pct
+    )
     if full:
-        full_sectors = ", ".join(r["sector"] for r in full[:6])
-        if language == "ne":
-            answer += f" Full coverage भएका sector हरू: {full_sectors}."
-        else:
-            answer += f" Sectors with full coverage include: {full_sectors}."
-
+        answer += message(
+            "dividend_coverage_full", language, sectors=", ".join(r["sector"] for r in full[:6])
+        )
     if partial:
-        partial_preview = ", ".join(
+        preview = ", ".join(
             f"{r['sector']} ({r['symbols_with_dividend_rows']}/{r['total_symbols']})"
             for r in partial[:6]
         )
-        if language == "ne":
-            answer += f" Partial coverage उदाहरण: {partial_preview}."
-        else:
-            answer += f" Partial coverage examples: {partial_preview}."
-
+        answer += message("dividend_coverage_partial", language, sectors=preview)
     if none:
-        none_sectors = ", ".join(r["sector"] for r in none[:6])
-        if language == "ne":
-            answer += f" कुनै dividend data नभएका sector: {none_sectors}."
-        else:
-            answer += f" Sectors with no dividend rows: {none_sectors}."
+        answer += message(
+            "dividend_coverage_none", language, sectors=", ".join(r["sector"] for r in none[:6])
+        )
 
     return {
         "answer": answer,
@@ -362,16 +334,7 @@ def _build_symbol_price_range_fallback(
     latest_trade_date = row_dict.get("latest_trade_date")
 
     if latest_trade_date is None:
-        if language == "ne":
-            answer = (
-                f"{company_name} ({symbol}) को price history हाल डेटासेटमा उपलब्ध छैन, "
-                "त्यसैले 52-week high/low गणना गर्न सकिएन।"
-            )
-        else:
-            answer = (
-                f"Price history for {company_name} ({symbol}) is not available in the "
-                "current dataset, so a 52-week high/low cannot be computed."
-            )
+        answer = message("price_range_no_history", language, company=company_name, symbol=symbol)
         return {
             "answer": answer,
             "sql": _PRICE_RANGE_52W_SQL.strip(),
@@ -379,16 +342,9 @@ def _build_symbol_price_range_fallback(
         }
 
     if high is None and low is None:
-        if language == "ne":
-            answer = (
-                f"{company_name} ({symbol}) का लागि {latest_trade_date} सम्म price history rows "
-                "भए पनि high/low मान उपलब्ध नभएकाले 52-week range निकाल्न सकिएन।"
-            )
-        else:
-            answer = (
-                f"Price rows exist for {company_name} ({symbol}) up to {latest_trade_date}, "
-                "but high/low values are missing, so the 52-week range cannot be computed."
-            )
+        answer = message(
+            "price_range_no_values", language, company=company_name, symbol=symbol, date=latest_trade_date
+        )
         return {
             "answer": answer,
             "sql": _PRICE_RANGE_52W_SQL.strip(),
@@ -399,38 +355,10 @@ def _build_symbol_price_range_fallback(
     low_text = _format_metric_value(low) if low is not None else "N/A"
 
     metric = entities.get("metric")
-    if language == "ne":
-        if metric == "price_high":
-            answer = (
-                f"{company_name} ({symbol}) को 52-week high ({latest_trade_date} सम्मको window) "
-                f"{high_text} छ।"
-            )
-        elif metric == "price_low":
-            answer = (
-                f"{company_name} ({symbol}) को 52-week low ({latest_trade_date} सम्मको window) "
-                f"{low_text} छ।"
-            )
-        else:
-            answer = (
-                f"{company_name} ({symbol}) को 52-week high {high_text} र low {low_text} छ "
-                f"(window ending {latest_trade_date})।"
-            )
-    else:
-        if metric == "price_high":
-            answer = (
-                f"The 52-week high for {company_name} ({symbol}) is {high_text} "
-                f"(window ending {latest_trade_date})."
-            )
-        elif metric == "price_low":
-            answer = (
-                f"The 52-week low for {company_name} ({symbol}) is {low_text} "
-                f"(window ending {latest_trade_date})."
-            )
-        else:
-            answer = (
-                f"The 52-week high for {company_name} ({symbol}) is {high_text} and "
-                f"the 52-week low is {low_text} (window ending {latest_trade_date})."
-            )
+    key = metric if metric in ("price_high", "price_low") else "price_range"
+    answer = message(
+        key, language, company=company_name, symbol=symbol, high=high_text, low=low_text, date=latest_trade_date
+    )
 
     return {
         "answer": answer,
@@ -483,19 +411,15 @@ def _build_symbol_metric_fallback(language: str, entities: dict) -> dict | None:
     value_text = _format_metric_value(value)
     fy = row_dict.get(fy_field) if fy_field else None
 
-    if language == "ne":
-        if fy:
-            answer = f"{company_name} ({symbol}) को पछिल्लो {label} FY {fy} मा {value_text} छ।"
-        else:
-            answer = f"{company_name} ({symbol}) को {label} {value_text} छ।"
-    else:
-        if fy:
-            answer = (
-                f"The latest {label} for {company_name} ({symbol}) is "
-                f"{value_text} in FY {fy}."
-            )
-        else:
-            answer = f"The {label} for {company_name} ({symbol}) is {value_text}."
+    answer = message(
+        "metric_with_fy" if fy else "metric",
+        language,
+        label=label,
+        company=company_name,
+        symbol=symbol,
+        value=value_text,
+        fy=fy,
+    )
 
     return {
         "answer": answer,
@@ -542,16 +466,7 @@ def _get_news_staleness_warning(language: str) -> str | None:
         if age_days <= NEWS_STALE_DAYS:
             return None
 
-        if language == "ne":
-            return (
-                "समाचार कोष पुरानो हुन सक्छ। "
-                f"अन्तिम अपडेट: {latest} ({total} लेख), लगभग {age_days} दिन अगाडि।"
-            )
-
-        return (
-            "The news corpus appears stale. "
-            f"Last update: {latest} ({total} articles), about {age_days} days ago."
-        )
+        return message("news_stale", language, latest=latest, total=total, days=age_days)
     except Exception:
         return None
 
@@ -559,17 +474,10 @@ def _get_news_staleness_warning(language: str) -> str | None:
 def _fallback_sql_synthesis(rows: list[dict], language: str) -> str:
     """Create a concise non-LLM summary when synthesis model calls fail."""
     if not rows:
-        if language == "ne":
-            return "क्वेरी सफल भयो, तर कुनै पङ्क्ति नतिजा फेला परेन।"
-        return "The query executed successfully, but no rows were returned."
+        return message("sql_summary_empty", language)
 
     top_rows = rows[:3]
-    if language == "ne":
-        lines = [f"क्वेरी सफल भयो। कुल {len(rows)} पङ्क्ति प्राप्त भयो। शीर्ष नतिजा:"]
-    else:
-        lines = [
-            f"Query executed successfully. Retrieved {len(rows)} row(s). Top results:"
-        ]
+    lines = [message("sql_summary_header", language, count=len(rows))]
 
     for row in top_rows:
         parts = [f"{k}: {v}" for k, v in row.items()]
@@ -580,15 +488,10 @@ def _fallback_sql_synthesis(rows: list[dict], language: str) -> str:
 def _fallback_rag_synthesis(passages: list[dict], language: str) -> str:
     """Create a concise non-LLM summary from retrieved passages."""
     if not passages:
-        if language == "ne":
-            return "यस प्रश्नका लागि सम्बन्धित समाचार भेटिएन।"
-        return "No relevant news passages were found for this query."
+        return message("news_summary_empty", language)
 
     top = passages[:3]
-    if language == "ne":
-        lines = ["प्राप्त समाचार अंशका आधारमा मुख्य शीर्षकहरू:"]
-    else:
-        lines = ["Based on retrieved passages, here are the most relevant headlines:"]
+    lines = [message("news_summary_header", language)]
 
     for p in top:
         published_at = p.get("published_at", "")
@@ -679,19 +582,10 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
     if not result["success"]:
         # The database error stays in "error" (logged with the request ID by run()),
         # never in the answer.
-        answer = (
-            "I could not get the data for this question. It may not be in the current "
-            "dataset, or it may help to ask it more specifically."
-        )
-        if language == "ne":
-            answer = (
-                "यो प्रश्नको लागि संरचित डेटा प्राप्त गर्न सकिएन। "
-                "डेटा उपलब्ध नहुन सक्छ, वा प्रश्नलाई अझ स्पष्ट रूपमा सोध्दा मद्दत पुग्न सक्छ।"
-            )
         return _response(
             "SQL",
             language,
-            answer,
+            message("sql_failed", language),
             success=False,
             sql=result.get("sql"),
             answer_source="generated_sql_failed",
@@ -746,28 +640,14 @@ def _handle_rag(query: str, language: str, entities: dict) -> dict:
             boost_sector=entities.get("sector") or None,
         )
     except Exception as e:
-        answer = (
-            "News retrieval is currently unavailable because the embedding/vector stack could not be loaded. "
-            "Please verify model availability and retry."
-        )
-        if language == "ne":
-            answer = (
-                "समाचार खोज सुविधा हाल उपलब्ध छैन। " "एम्बेडिङ मोडेल वा भेक्टर स्टोर लोड हुन सकेन।"
-            )
         return _response(
-            "RAG", language, answer, success=False,
+            "RAG", language, message("news_unavailable", language), success=False,
             data_freshness="News data freshness unknown", error=str(e),
         )
 
     if not passages:
-        answer = (
-            "No relevant news or announcements were found for this query in the current corpus. "
-            "The news corpus is updated weekly — try again after the next refresh."
-        )
-        if language == "ne":
-            answer = "यस प्रश्नसँग सम्बन्धित कुनै समाचार भेटिएन।"
         return _response(
-            "RAG", language, answer, success=False,
+            "RAG", language, message("news_not_found", language), success=False,
             data_freshness=_get_news_freshness(), error="No passages retrieved",
         )
 
@@ -824,25 +704,10 @@ def _handle_direct(query: str, language: str) -> dict:
     return _response("DIRECT", language, answer)
 
 
-UNEXPECTED_ERROR_ANSWERS = {
-    "en": "Something went wrong while answering this question. Please try again in a moment.",
-    "ne": "यो प्रश्नको उत्तर दिँदा समस्या आयो। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।",
-}
-
-
 def _timeout_result(route: str, language: str, timeout_sec: float, error: str) -> dict:
-    if language == "ne":
-        answer = (
-            f"यो प्रश्नको उत्तर {timeout_sec:g} सेकेन्डको समय सीमाभित्र तयार गर्न सकिएन। "
-            "कृपया प्रश्नलाई अझ सानो वा स्पष्ट बनाएर फेरि प्रयास गर्नुहोस्।"
-        )
-    else:
-        answer = (
-            f"This question could not be answered within the {timeout_sec:g} s time limit. "
-            "Please try a narrower or more specific question."
-        )
     return _response(
-        route, language, answer, success=False, answer_source="timeout",
+        route, language, message("timeout", language, seconds=timeout_sec),
+        success=False, answer_source="timeout",
         error=f"deadline_exceeded: {error}",
     )
 
@@ -950,7 +815,7 @@ def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
         result = _response(
             route,
             language,
-            UNEXPECTED_ERROR_ANSWERS.get(language, UNEXPECTED_ERROR_ANSWERS["en"]),
+            message("unexpected_error", language),
             success=False,
             answer_source="error",
             error=str(e),
