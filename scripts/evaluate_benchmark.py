@@ -245,7 +245,7 @@ def _build_latency_summary(samples_ms: list[float]) -> dict[str, float]:
 
 
 def _reference_rows(case: dict[str, Any]) -> tuple[list[dict] | None, str | None]:
-    res = execute_query(case["ground_truth_sql"])
+    res = execute_query(case["ground_truth_sql"], max_rows=None)  # trusted SQL: no row cap
     if not res["success"]:
         return None, res["error"]
     return res["rows"], None
@@ -304,7 +304,7 @@ def _sql_summary(rows: list) -> dict[str, Any]:
 
 def company_aliases() -> dict[str, list[str]]:
     """Symbol -> company name forms an answer may use instead of the symbol."""
-    res = execute_query("SELECT symbol, name FROM companies")
+    res = execute_query("SELECT symbol, name FROM companies", max_rows=None)
     aliases: dict[str, list[str]] = {}
     for row in res["rows"] if res["success"] else []:
         name = str(row.get("name") or "").strip()

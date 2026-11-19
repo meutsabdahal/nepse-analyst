@@ -147,7 +147,12 @@ No explanation. No punctuation. Just the label."""
 
 
 def build_sql_synthesis_prompt(
-    query: str, sql: str, rows: list[dict], columns: list[str], query_language: str
+    query: str,
+    sql: str,
+    rows: list[dict],
+    columns: list[str],
+    query_language: str,
+    truncated: bool = False,
 ) -> str:
     """
     Prompt for converting a raw SQL result into a natural language answer.
@@ -159,7 +164,11 @@ def build_sql_synthesis_prompt(
     elif len(rows) == 1:
         result_text = str(dict(rows[0]))
     else:
-        result_text = f"{len(rows)} rows:\n"
+        if truncated:
+            count = f"At least {len(rows)} rows (the result was cut off; do not state a total)"
+        else:
+            count = f"{len(rows)} rows"
+        result_text = f"{count}:\n"
         for i, row in enumerate(rows[:10], 1):  # cap at 10 rows for prompt length
             result_text += f"  {i}. {dict(row)}\n"
         if len(rows) > 10:

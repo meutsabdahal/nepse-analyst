@@ -48,6 +48,10 @@ MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 CORPUS_STATS_TTL_SEC = _env_int("CORPUS_STATS_TTL_SEC", 60)
 DB_BUSY_TIMEOUT_MS = _env_int("DB_BUSY_TIMEOUT_MS", 5000)
+# Limits on each query run by execute_query (model-written SQL). The timeout
+# covers running the query and fetching its rows; 0 disables either limit.
+SQL_TIMEOUT_MS = _env_int("SQL_TIMEOUT_MS", 5000)
+SQL_MAX_ROWS = _env_int("SQL_MAX_ROWS", 500)
 
 # Scraping Settings
 SCRAPE_DELAY_SEC = _env_int("SCRAPE_DELAY_SEC", 3)  # minimum seconds between requests

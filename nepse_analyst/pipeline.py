@@ -772,6 +772,7 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
         rows=result["rows"],
         columns=result["columns"],
         query_language=language,
+        truncated=result.get("truncated", False),
     )
     try:
         answer = llm.call(synthesis_prompt, temperature=0.1)

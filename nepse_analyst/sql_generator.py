@@ -31,6 +31,7 @@ def generate_and_execute(question: str) -> dict:
         "rows": list[dict],
         "columns": list[str],
         "row_count": int,
+        "truncated": bool,    # True when the row cap cut the result short
         "attempts": int,
         "error": str | None   # last error if all retries failed
     }
@@ -68,6 +69,7 @@ def generate_and_execute(question: str) -> dict:
                 "rows": result["rows"],
                 "columns": result["columns"],
                 "row_count": result["row_count"],
+                "truncated": result.get("truncated", False),
                 "attempts": attempt,
                 "error": None,
             }
@@ -82,6 +84,7 @@ def generate_and_execute(question: str) -> dict:
         "rows": [],
         "columns": [],
         "row_count": 0,
+        "truncated": False,
         "attempts": MAX_SQL_RETRIES,
         "error": last_error,
     }

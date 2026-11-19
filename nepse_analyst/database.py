@@ -3,8 +3,12 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import time
 
-from nepse_analyst.config import DB_PATH, DB_BUSY_TIMEOUT_MS
+from nepse_analyst.config import DB_PATH, DB_BUSY_TIMEOUT_MS, SQL_MAX_ROWS, SQL_TIMEOUT_MS
+
+# SQLite calls the progress handler every this many VM instructions.
+_PROGRESS_INTERVAL = 1000
 
 
 # Table names
@@ -214,39 +218,62 @@ def get_connection(read_only: bool = False):
     return conn
 
 
-def execute_query(sql: str) -> dict:
+def _failure(error: str) -> dict:
+    return {"success": False, "rows": [], "columns": [], "row_count": 0, "truncated": False, "error": error}
+
+
+def execute_query(
+    sql: str, *, timeout_ms: int | None = SQL_TIMEOUT_MS, max_rows: int | None = SQL_MAX_ROWS
+) -> dict:
+    """Run one read-only SELECT with a time limit and a row cap.
+
+    The time limit covers executing the query and fetching its rows; a query
+    that runs past it is aborted with an error. At most ``max_rows`` rows are
+    fetched, and ``truncated`` says whether more existed. ``None`` or 0
+    disables a limit (for trusted SQL such as benchmark references).
+    """
     conn = None
+    timed_out = False
     try:
         is_valid, validation_error = validate_read_only_sql(sql)
         if not is_valid:
-            return {
-                "success": False,
-                "rows": [],
-                "columns": [],
-                "row_count": 0,
-                "error": validation_error,
-            }
+            return _failure(validation_error)
 
         conn = get_connection(read_only=True)
+        if timeout_ms:
+            deadline = time.monotonic() + timeout_ms / 1000.0
+
+            def _past_deadline() -> int:
+                nonlocal timed_out
+                timed_out = time.monotonic() > deadline
+                return int(timed_out)  # non-zero aborts the statement
+
+            conn.set_progress_handler(_past_deadline, _PROGRESS_INTERVAL)
+
         cursor = conn.cursor()
         cursor.execute(sql)
-        rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        if max_rows:
+            rows = cursor.fetchmany(max_rows + 1)
+            truncated = len(rows) > max_rows
+            rows = rows[:max_rows]
+        else:
+            rows, truncated = cursor.fetchall(), False
         return {
             "success": True,
             "rows": [dict(zip(columns, row)) for row in rows],
             "columns": columns,
             "row_count": len(rows),
+            "truncated": truncated,
             "error": None,
         }
     except Exception as e:
-        return {
-            "success": False,
-            "rows": [],
-            "columns": [],
-            "row_count": 0,
-            "error": str(e),
-        }
+        if timed_out:
+            return _failure(
+                f"Query stopped after the {timeout_ms / 1000:g} s time limit. "
+                "Narrow it with WHERE filters, avoid unbounded joins, or add a LIMIT."
+            )
+        return _failure(str(e))
     finally:
         if conn is not None:
             conn.close()
