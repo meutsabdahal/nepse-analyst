@@ -1,4 +1,4 @@
-"""Fundamentals and dividends scraped from merolagani.com company pages.
+"""Company list, fundamentals and dividends scraped from merolagani.com.
 
 Respectful scraping: pacing between requests and a local HTML cache, so
 re-runs only hit the network for symbols that have not been fetched yet.
@@ -15,11 +15,13 @@ from urllib.parse import urlencode
 import requests
 from bs4 import BeautifulSoup
 
+from nepse_analyst import sectors
 from nepse_analyst.config import NEWS_CACHE_DIR, SCRAPE_DELAY_SEC
-from nepse_analyst.ingestion.parsing import extract_float, normalize_ws
-from nepse_analyst.ingestion.records import Dividend, Fundamental
+from nepse_analyst.ingestion.parsing import extract_float, extract_int, normalize_ws
+from nepse_analyst.ingestion.records import Company, Dividend, Fundamental
 
 BASE_URL = "https://merolagani.com/CompanyDetail.aspx"
+COMPANY_LIST_URL = "https://merolagani.com/CompanyList.aspx"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -238,6 +240,60 @@ def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
         Dividend(symbol=symbol, fiscal_year=fy, **vals)
         for fy, vals in sorted(by_fy.items(), reverse=True)
     ]
+
+
+def _positive(value: float | int | None) -> float | int | None:
+    return value if value is not None and value > 0 else None
+
+
+def parse_company_list(soup: BeautifulSoup) -> list[Company]:
+    """Every listed security on CompanyList.aspx, one collapsible panel per sector.
+
+    Raises on a sector label that ``sectors.LISTING_SECTOR_LABELS`` does not know,
+    so a new label is added deliberately instead of landing under a raw name.
+    """
+    companies: dict[str, Company] = {}
+    unknown: set[str] = set()
+    for panel in soup.select("div.panel"):
+        title = panel.select_one(".panel-title")
+        table = panel.find("table")
+        if not title or not table:
+            continue  # sectors with no companies render a "Could not find" note instead
+        label = normalize_ws(title.get_text(" ", strip=True))
+        for tr in table.find_all("tr"):
+            cells = [normalize_ws(td.get_text(" ", strip=True)) for td in tr.find_all("td")]
+            if len(cells) < 2 or not cells[0]:
+                continue  # header row uses <th>
+            symbol, name = cells[0].upper(), cells[1]
+            sector = sectors.sector_from_listing(label, name)
+            if sector is None:
+                unknown.add(label)
+                continue
+            companies.setdefault(symbol, Company(
+                symbol=symbol,
+                name=name,
+                sector=sector,
+                listed_shares=_positive(extract_int(cells[2])) if len(cells) > 2 else None,
+                paid_up_value=_positive(extract_float(cells[3])) if len(cells) > 3 else None,
+                total_paid_up=_positive(extract_float(cells[4])) if len(cells) > 4 else None,
+            ))
+    if unknown:
+        raise ValueError(f"Unmapped sector labels on {COMPANY_LIST_URL}: {sorted(unknown)}")
+    return list(companies.values())
+
+
+class MerolaganiCompanySource:
+    """Live company list: what is listed today, with current share counts."""
+
+    name = "merolagani-company-list"
+
+    def __init__(self, timeout_sec: float = 30) -> None:
+        self.timeout_sec = timeout_sec
+
+    def fetch_companies(self) -> list[Company]:
+        resp = requests.get(COMPANY_LIST_URL, headers=HEADERS, timeout=self.timeout_sec)
+        resp.raise_for_status()
+        return parse_company_list(BeautifulSoup(resp.text, "html.parser"))
 
 
 class MerolaganiSource:

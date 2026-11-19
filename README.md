@@ -173,11 +173,13 @@ All ingestion goes through `nepse_analyst.ingestion.Loader`. Sources only return
 
 | Data | Interface | Default source |
 | --- | --- | --- |
-| Companies | `CompanySource` | `KaggleCsvCompanySource` (`data/raw/nepse_companies_kaggle.csv`) |
+| Companies | `CompanySource` | `MerolaganiCompanySource` (live `merolagani.com/CompanyList.aspx`; `KaggleCsvCompanySource` reads the bundled static snapshot for offline builds) |
 | Prices, indices | `PriceSource` | `FallbackPriceSource([NepseApiSource(), GitHubOpenDataSource()])` |
 | Fundamentals, dividends | `FundamentalsSource` | `MerolaganiSource` (HTML cached in `data/raw/news_cache/`) |
 | IPOs | `IPOSource` | `SharesansarIPOSource` |
 | News | `NewsSource` (list) | `SharesansarNewsSource`, `NepseAlphaNewsSource` |
+
+The companies step upserts the live list. A company that drops off it (delisted, merged, or a matured bond or fund) is kept with `is_active = 0`, because prices, fundamentals and news still refer to it, and returns to 1 if it is listed again. The step refuses a list shorter than 80% of the currently active companies, so a partial page cannot mark the rest delisted.
 
 The news step checks the scraped corpus before replacing the vector store. It fails, leaving the existing store in place, when there are fewer than `NEWS_MIN_ARTICLES` (default 50) articles after dedupe, when the newest article is older than `NEWS_MAX_NEWEST_AGE_DAYS` (default 14), or when more than half the articles have no parseable date. A source that returns nothing (NepseAlpha is often unreachable) prints a warning. Set `NEWS_ALLOW_THIN_CORPUS=1` to index anyway; the problems are still printed and returned in the step result.
 
@@ -241,7 +243,7 @@ Troubleshooting (TestClient mismatch):
 ## Known Data Constraints
 
 From the 2026-11-17 database (reference results are snapshotted in `evaluation/benchmark_questions.json`; refresh with `uv run python scripts/evaluate_benchmark.py --refresh-snapshot`):
-- `companies.market_cap` is computed during the build as `listed_shares` × the symbol's latest close (recomputed by both the `companies` and `prices` steps). 250 of 520 companies have one; the rest lack a share count in the bundled Kaggle CSV or have no price history (promoter shares are not priced). Share counts come from that CSV snapshot, so bonus and right issues since then are not reflected. Until 2026-11-19 the CSV's thousands separators were parsed as missing, so `listed_shares` was 0 and `market_cap` NULL for every company, and Q3 had an empty reference.
+- `companies.market_cap` is computed during the build as `listed_shares` × the symbol's latest close (recomputed by both the `companies` and `prices` steps). 249 of the 585 active companies have one; the rest lack a share count on the company list or have no price history (promoter shares are not priced), and inactive companies get NULL. Share counts come from Merolagani's company list, which can lag a company's own page (NABIL: 270.6M on the list, 284.1M on its page), so recent bonus and right issues may be missing. Until 2026-11-19 the CSV's thousands separators were parsed as missing, so `listed_shares` was 0 and `market_cap` NULL for every company, and Q3 had an empty reference.
 - Q6 ("top 5 most oversubscribed IPOs") is deferred and not scored (`deferred_sql_benchmark` in the benchmark file). `ipos.total_applicants` and `ipos.oversubscription_rate` are NULL for every row because no source exposes IPO applicant counts. Sharesansar's existing-issues feed, NepaliPaisa and Merolagani list units, dates and issue manager only, and the CDSC and Sharesansar result pages check one BOID at a time. The columns stay in the schema (the prompt marks them "no data"), and Q6 returns to scoring once a source fills them.
 - Q10 has an empty reference: `fundamentals.roe` is NULL for every row.
 - Q5 ("consistent EPS growth for 3 consecutive fiscal years") is deferred and not scored. Merolagani's company page shows only the latest fiscal year's EPS, P/E and book value; its Quarterly tab and NepaliPaisa's Financial Reports tab list report announcements and PDFs, not figures. So `fundamentals` holds one fiscal year per company. The fundamentals step now upserts instead of clearing a company's rows, so each build adds the current year and history accumulates; Q5 returns to scoring once companies have three consecutive years. Its reference SQL checks EPS rising across three consecutive fiscal years (previously it listed every EPS row) and is still covered by `tests/test_benchmark_eval.py`. Q2's reference SQL had the same problem (raw dividend rows, streak check left to code that did not exist) and now returns the 23 hydropower companies with a 3+ year cash-dividend run.

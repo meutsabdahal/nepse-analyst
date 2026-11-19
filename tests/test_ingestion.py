@@ -22,8 +22,9 @@ from nepse_analyst.ingestion.parsing import canonical_index_name
 from nepse_analyst.ingestion.sources.base import PriceSource
 from nepse_analyst.ingestion.sources.fallback import FallbackPriceSource
 from nepse_analyst.ingestion.sources.github_open_data import GitHubOpenDataSource
-from nepse_analyst.ingestion.sources.kaggle_csv import SECTOR_MAP, KaggleCsvCompanySource
+from nepse_analyst.ingestion.sources.kaggle_csv import KaggleCsvCompanySource
 from nepse_analyst.ingestion.sources.merolagani import (
+    parse_company_list,
     normalize_fiscal_year,
     parse_dividends,
     parse_fundamentals,
@@ -33,7 +34,14 @@ from nepse_analyst.ingestion.sources.merolagani import (
 class FakeCompanies:
     name = "fake-companies"
 
+    def __init__(self):
+        self.drop: set[str] = set()
+
     def fetch_companies(self):
+        return [c for c in self._all() if c.symbol not in self.drop]
+
+    @staticmethod
+    def _all():
         return [
             Company("NABIL", "Nabil Bank Limited", sectors.COMMERCIAL_BANKS, 100),
             Company("NABILP", "Nabil Bank Limited Promoter Share", sectors.OTHERS, 10),
@@ -122,11 +130,12 @@ class LoaderTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmp.name, "nepse.db")
         self.prices = FakePrices()
+        self.companies = FakeCompanies()
         self.fundamentals = FakeFundamentals()
         self.indexed = []
         self.loader = Loader(
             sources=Sources(
-                companies=FakeCompanies(),
+                companies=self.companies,
                 prices=self.prices,
                 fundamentals=self.fundamentals,
                 ipos=FakeIPOs(),
@@ -233,6 +242,26 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(self.query("SELECT COUNT(*) FROM fundamentals WHERE symbol='NBF2'"), [(0,)])
         self.assertEqual(self.query("SELECT COUNT(*) FROM dividends WHERE symbol='NBF2'"), [(0,)])
 
+    def test_companies_missing_from_the_list_become_inactive_and_are_kept(self):
+        self.loader.run(["companies", "prices"])
+        self.companies.drop = {"AHPC"}
+        result = self.loader.run(["companies"])["companies"]
+        self.assertEqual(result["newly_inactive"], 1)
+        self.assertEqual(self.query("SELECT is_active, market_cap FROM companies WHERE symbol='AHPC'"), [(0, None)])
+        self.assertEqual(self.query("SELECT COUNT(*) FROM price_history WHERE symbol='AHPC'"), [(1,)])
+        self.assertEqual(self.query("SELECT is_active FROM companies WHERE symbol='NABIL'"), [(1,)])
+
+        self.companies.drop = set()
+        self.loader.run(["companies"])
+        self.assertEqual(self.query("SELECT is_active, market_cap FROM companies WHERE symbol='AHPC'"), [(1, 15000.0)])
+
+    def test_short_company_list_is_refused(self):
+        self.loader.run(["companies"])
+        self.companies.drop = {"NABIL", "NABILP", "NABILPO", "NADEP", "AHPC"}
+        with self.assertRaisesRegex(RuntimeError, "refusing"):
+            self.loader.run(["companies"])
+        self.assertEqual(self.query("SELECT COUNT(*) FROM companies WHERE is_active = 1"), [(6,)])
+
     def test_unavailable_price_source_fails_before_deleting_prices(self):
         self.loader.run(["companies", "prices"])
         self.prices.ok = False
@@ -260,7 +289,7 @@ class KaggleCsvTests(unittest.TestCase):
         self.assertEqual((gicl.listed_shares, gicl.paid_up_value, gicl.total_paid_up), (None, None, None))
 
     def test_sector_map_targets_canonical_sectors(self):
-        self.assertLessEqual(set(SECTOR_MAP.values()), set(sectors.ALL_SECTORS))
+        self.assertLessEqual(set(sectors.LISTING_SECTOR_LABELS.values()), set(sectors.ALL_SECTORS))
         self.assertLessEqual(set(sectors.FUNDAMENTALS_EXCLUDED_SECTORS), set(sectors.ALL_SECTORS))
 
     def test_bundled_csv_maps_every_sector_label(self):
@@ -287,6 +316,53 @@ class KaggleCsvTests(unittest.TestCase):
         companies = KaggleCsvCompanySource().fetch_companies()
         with_shares = [c for c in companies if c.listed_shares]
         self.assertGreater(len(with_shares), len(companies) // 2)
+
+
+class MerolaganiCompanyListTests(unittest.TestCase):
+    HTML = """
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><a>Capital</a></h3></div>
+      <div><div>Could not find companies for this sector</div></div>
+    </div>
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><a>Commercial Banks</a></h3></div>
+      <div><table>
+        <tr><th>Symbol</th><th>Company Name</th><th>Listed Shares</th><th>Paidup Value</th><th>Total Paidup</th></tr>
+        <tr><td>NABIL</td><td>Nabil Bank Limited</td><td>284,098,468.50</td><td>100.00</td><td>28,409,846,850.00</td></tr>
+      </table></div>
+    </div>
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><a>Government Bond</a></h3></div>
+      <div><table>
+        <tr><th>Symbol</th><th>Company Name</th><th>Listed Shares</th><th>Paidup Value</th><th>Total Paidup</th></tr>
+        <tr><td>NRBBR2067ga</td><td>Bikash Rinpatra 2067 Ga</td><td>0</td><td>0.00</td><td>0.00</td></tr>
+      </table></div>
+    </div>
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><a>Others</a></h3></div>
+      <div><table>
+        <tr><th>Symbol</th><th>Company Name</th></tr>
+        <tr><td>SJLICP</td><td>Suryajyoti Life Insurance Co. Ltd. Promotor Share</td><td>1</td><td>1</td><td>1</td></tr>
+      </table></div>
+    </div>
+    """
+
+    def test_parses_panels_into_canonical_sectors(self):
+        companies = {c.symbol: c for c in parse_company_list(BeautifulSoup(self.HTML, "html.parser"))}
+        self.assertEqual(sorted(companies), ["NABIL", "NRBBR2067GA", "SJLICP"])
+        nabil = companies["NABIL"]
+        self.assertEqual(
+            (nabil.sector, nabil.listed_shares, nabil.paid_up_value, nabil.total_paid_up, nabil.is_active),
+            (sectors.COMMERCIAL_BANKS, 284098468, 100.0, 28409846850.0, 1),
+        )
+        bond = companies["NRBBR2067GA"]
+        self.assertEqual((bond.sector, bond.listed_shares, bond.paid_up_value), (sectors.GOVERNMENT_BONDS, None, None))
+        self.assertEqual(companies["SJLICP"].sector, sectors.PROMOTER_SHARES)
+
+    def test_unknown_sector_label_is_rejected(self):
+        html = self.HTML.replace("Commercial Banks", "Crypto Exchanges")
+        with self.assertRaisesRegex(ValueError, "Crypto Exchanges"):
+            parse_company_list(BeautifulSoup(html, "html.parser"))
 
 
 class FallbackPriceSourceTests(unittest.TestCase):

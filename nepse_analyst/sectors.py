@@ -55,5 +55,39 @@ def is_promoter_share(name: str | None, sector: str | None) -> bool:
     return sector == PROMOTER_SHARES or bool(_PROMOTER_NAME.search(name or ""))
 
 
+# Sector labels on Merolagani's company list. The bundled Kaggle CSV is a
+# snapshot of that page and uses the same labels.
+LISTING_SECTOR_LABELS: dict[str, str] = {
+    "Commercial Banks": COMMERCIAL_BANKS,
+    "Hydro Power": HYDROPOWER,
+    "Life Insurance": LIFE_INSURANCE,
+    "Development Bank Limited": DEVELOPMENT_BANKS,
+    "Finance": FINANCE_COMPANIES,
+    "Microfinance": MICROFINANCE,
+    "Non-Life Insurance": NON_LIFE_INSURANCE,
+    "Hotels And Tourism": HOTELS_AND_TOURISM,
+    "Manufacturing And Processing": MANUFACTURING,
+    "Tradings": TRADING,
+    "Mutual Fund": MUTUAL_FUNDS,
+    "Investment": INVESTMENT,
+    "Others": OTHERS,
+    "Corporate Debenture": CORPORATE_DEBENTURES,
+    "Government Bond": GOVERNMENT_BONDS,
+    "Capital": OTHERS,
+    "Promotor Share": PROMOTER_SHARES,
+}
+
+
+def sector_from_listing(label: str, name: str | None) -> str | None:
+    """Canonical sector for a listing label, or None if the label is unknown.
+
+    A few promoter listings are filed under another label; their names say so.
+    """
+    sector = LISTING_SECTOR_LABELS.get(label.strip())
+    if sector is None:
+        return None
+    return PROMOTER_SHARES if is_promoter_share(name, sector) else sector
+
+
 # Instrument classes without comparable company fundamentals.
 FUNDAMENTALS_EXCLUDED_SECTORS: tuple[str, ...] = (GOVERNMENT_BONDS, MUTUAL_FUNDS, CORPORATE_DEBENTURES)

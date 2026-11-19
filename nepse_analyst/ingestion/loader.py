@@ -45,6 +45,8 @@ from nepse_analyst.ingestion.sources.base import (
 STEPS: tuple[str, ...] = ("companies", "prices", "indices", "fundamentals", "ipos", "news")
 
 PRICE_BATCH_SIZE = 500
+# load_companies refuses a list shorter than this share of the currently active companies.
+MIN_COMPANY_LIST_RATIO = 0.8
 MAX_CONSECUTIVE_PRICE_FAILURES = 25
 MAX_ERROR_LOGS = 15
 
@@ -65,8 +67,7 @@ def default_sources() -> Sources:
     """Today's sources. The unofficial NEPSE API is the first price source."""
     from nepse_analyst.ingestion.sources.fallback import FallbackPriceSource
     from nepse_analyst.ingestion.sources.github_open_data import GitHubOpenDataSource
-    from nepse_analyst.ingestion.sources.kaggle_csv import KaggleCsvCompanySource
-    from nepse_analyst.ingestion.sources.merolagani import MerolaganiSource
+    from nepse_analyst.ingestion.sources.merolagani import MerolaganiCompanySource, MerolaganiSource
     from nepse_analyst.ingestion.sources.nepse_api import NepseApiSource
     from nepse_analyst.ingestion.sources.nepsealpha import NepseAlphaNewsSource
     from nepse_analyst.ingestion.sources.sharesansar import (
@@ -75,7 +76,7 @@ def default_sources() -> Sources:
     )
 
     return Sources(
-        companies=KaggleCsvCompanySource(),
+        companies=MerolaganiCompanySource(),
         prices=FallbackPriceSource([NepseApiSource(), GitHubOpenDataSource()]),
         fundamentals=MerolaganiSource(),
         ipos=SharesansarIPOSource(),
@@ -411,35 +412,71 @@ class Loader:
 
     # -- steps --------------------------------------------------------------
     def load_companies(self) -> dict:
-        companies = self.sources.companies.fetch_companies()
+        """Upsert the source's company list; companies no longer on it become inactive.
+
+        Delisted and merged companies are kept (prices, fundamentals and news refer
+        to them) with is_active = 0, and come back to 1 if they are listed again.
+        """
+        source = self.sources.companies
+        companies = source.fetch_companies()
         if not companies:
-            raise RuntimeError(f"{self.sources.companies.name} returned no companies")
+            raise RuntimeError(f"{source.name} returned no companies")
         conn = self._connect()
         try:
-            conn.execute("DELETE FROM companies")
+            active_before = conn.execute("SELECT COUNT(*) FROM companies WHERE is_active = 1").fetchone()[0]
+            if len(companies) < MIN_COMPANY_LIST_RATIO * active_before:
+                raise RuntimeError(
+                    f"{source.name} returned {len(companies)} companies but {active_before} are active; "
+                    "refusing to mark the rest delisted (likely a partial page or a layout change)."
+                )
+            conn.execute("CREATE TEMP TABLE listed (symbol TEXT PRIMARY KEY)")
+            conn.executemany("INSERT OR IGNORE INTO listed VALUES (?)", [(c.symbol,) for c in companies])
             conn.executemany(
-                "INSERT INTO companies (symbol, name, sector, listed_shares, paid_up_value, "
-                "total_paid_up, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO companies (symbol, name, sector, listed_shares, paid_up_value,
+                    total_paid_up, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    name = excluded.name, sector = excluded.sector,
+                    listed_shares = excluded.listed_shares, paid_up_value = excluded.paid_up_value,
+                    total_paid_up = excluded.total_paid_up, is_active = excluded.is_active
+                """,
                 [
                     (c.symbol, c.name, c.sector, c.listed_shares, c.paid_up_value, c.total_paid_up, c.is_active)
                     for c in companies
                 ],
             )
+            delisted = conn.execute(
+                "UPDATE companies SET is_active = 0 "
+                "WHERE is_active = 1 AND symbol NOT IN (SELECT symbol FROM listed)"
+            ).rowcount
+            conn.execute("DROP TABLE listed")
             conn.commit()
-            sectors = conn.execute("SELECT COUNT(DISTINCT sector) FROM companies").fetchone()[0]
-            # Reloading companies drops market_cap; recompute it from any prices already loaded.
+            sectors = conn.execute(
+                "SELECT COUNT(DISTINCT sector) FROM companies WHERE is_active = 1"
+            ).fetchone()[0]
+            inactive = conn.execute("SELECT COUNT(*) FROM companies WHERE is_active = 0").fetchone()[0]
             with_market_cap = self._update_market_caps(conn)
         finally:
             conn.close()
-        return {"companies": len(companies), "sectors": sectors, "with_market_cap": with_market_cap}
+        return {
+            "companies": len(companies),
+            "sectors": sectors,
+            "newly_inactive": delisted,
+            "inactive": inactive,
+            "with_market_cap": with_market_cap,
+        }
 
     @staticmethod
     def _update_market_caps(conn: sqlite3.Connection) -> int:
-        """Set companies.market_cap = listed_shares x latest close; return how many are set."""
+        """Set companies.market_cap = listed_shares x latest close; return how many are set.
+
+        Inactive companies get NULL: their last close is not a current valuation.
+        """
         conn.execute(
-            "UPDATE companies SET market_cap = listed_shares * ("
+            "UPDATE companies SET market_cap = CASE WHEN is_active = 1 THEN listed_shares * ("
             "SELECT p.close_price FROM price_history p WHERE p.symbol = companies.symbol "
-            "ORDER BY p.trade_date DESC LIMIT 1)"
+            "ORDER BY p.trade_date DESC LIMIT 1) END"
         )
         conn.commit()
         return conn.execute("SELECT COUNT(*) FROM companies WHERE market_cap IS NOT NULL").fetchone()[0]

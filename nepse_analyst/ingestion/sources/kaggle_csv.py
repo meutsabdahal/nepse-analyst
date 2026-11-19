@@ -1,4 +1,9 @@
-"""Company master list from the bundled Kaggle CSV."""
+"""Company master list from the bundled Kaggle CSV.
+
+A static snapshot of Merolagani's company list: every row is marked active
+and listings since then are missing. The default build uses the live list
+(``MerolaganiCompanySource``); this source is kept for offline builds.
+"""
 
 from __future__ import annotations
 
@@ -20,27 +25,6 @@ _COLUMN_MAPPING = {
     "listed_shares": "listed_shares",
     "paidup_value": "paid_up_value",
     "total_paidup": "total_paid_up",
-}
-
-# Kaggle sector labels -> canonical sector names.
-SECTOR_MAP = {
-    "Commercial Banks": sectors.COMMERCIAL_BANKS,
-    "Hydro Power": sectors.HYDROPOWER,
-    "Life Insurance": sectors.LIFE_INSURANCE,
-    "Development Bank Limited": sectors.DEVELOPMENT_BANKS,
-    "Finance": sectors.FINANCE_COMPANIES,
-    "Microfinance": sectors.MICROFINANCE,
-    "Non-Life Insurance": sectors.NON_LIFE_INSURANCE,
-    "Hotels And Tourism": sectors.HOTELS_AND_TOURISM,
-    "Manufacturing And Processing": sectors.MANUFACTURING,
-    "Tradings": sectors.TRADING,
-    "Mutual Fund": sectors.MUTUAL_FUNDS,
-    "Investment": sectors.INVESTMENT,
-    "Others": sectors.OTHERS,
-    "Corporate Debenture": sectors.CORPORATE_DEBENTURES,
-    "Government Bond": sectors.GOVERNMENT_BONDS,
-    "Capital": sectors.OTHERS,
-    "Promotor Share": sectors.PROMOTER_SHARES,
 }
 
 
@@ -75,13 +59,10 @@ class KaggleCsvCompanySource:
         for col in ("symbol", "name", "sector"):
             df[col] = df[col].astype(str).str.strip()
         df["symbol"] = df["symbol"].str.upper()
-        unmapped = sorted(set(df["sector"]) - SECTOR_MAP.keys())
+        unmapped = sorted(set(df["sector"]) - sectors.LISTING_SECTOR_LABELS.keys())
         if unmapped:
             raise ValueError(f"Unmapped sector labels in {self.csv_path.name}: {unmapped}")
-        df["sector"] = df["sector"].map(SECTOR_MAP)
-        # A few promoter listings are filed under another label; their names say so.
-        promoter = [sectors.is_promoter_share(n, s) for n, s in zip(df["name"], df["sector"])]
-        df.loc[promoter, "sector"] = sectors.PROMOTER_SHARES
+        df["sector"] = [sectors.sector_from_listing(s, n) for s, n in zip(df["sector"], df["name"])]
         for col in ("listed_shares", "paid_up_value", "total_paid_up"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.drop_duplicates(subset=["symbol"], keep="first")
