@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
+from nepse_analyst.config import NEWS_STALE_DAYS, PRICE_STALE_DAYS
 from nepse_analyst.database import get_connection
 
 
@@ -168,3 +170,67 @@ def answer_basis(result: dict[str, Any]) -> dict[str, Any] | None:
     if articles:
         return {"kind": "news", "label": f"From {_articles(articles)}", "news_articles": articles}
     return None
+
+
+def _latest_price_date() -> str | None:
+    try:
+        conn = get_connection()
+        try:
+            return conn.execute("SELECT MAX(trade_date) FROM price_history").fetchone()[0]
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def _latest_news_date() -> str | None:
+    try:
+        from nepse_analyst.retriever import get_corpus_stats
+
+        latest = get_corpus_stats().get("latest_date")
+    except Exception:
+        return None
+    return latest if latest and latest != "unknown" else None
+
+
+def _age_days(iso_date: str | None, today: date) -> int | None:
+    try:
+        return (today - date.fromisoformat(iso_date)).days if iso_date else None
+    except ValueError:
+        return None
+
+
+def data_freshness(today: date | None = None) -> dict[str, Any]:
+    """How current the price data and the news corpus are, for the chip under every answer.
+
+    Each is "stale" when it is older than PRICE_STALE_DAYS / NEWS_STALE_DAYS, or
+    when its date is unknown (not built yet). ``warning`` explains which, or is None.
+    """
+    today = today or date.today()
+    prices_to, news_to = _latest_price_date(), _latest_news_date()
+    prices_age, news_age = _age_days(prices_to, today), _age_days(news_to, today)
+    prices_stale = prices_age is None or prices_age > PRICE_STALE_DAYS
+    news_stale = news_age is None or news_age > NEWS_STALE_DAYS
+
+    problems = []
+    if prices_stale:
+        problems.append(
+            f"Prices are {prices_age} days old." if prices_age is not None else "No price data is loaded."
+        )
+    if news_stale:
+        problems.append(
+            f"News is {news_age} days old." if news_age is not None else "No news is indexed."
+        )
+    return {
+        "prices_to": prices_to,
+        "news_to": news_to,
+        "prices_age_days": prices_age,
+        "news_age_days": news_age,
+        "prices_stale": prices_stale,
+        "news_stale": news_stale,
+        "label": " · ".join(
+            [f"Prices to {prices_to}" if prices_to else "No price data",
+             f"News to {news_to}" if news_to else "No news data"]
+        ),
+        "warning": " ".join(problems) or None,
+    }

@@ -45,6 +45,9 @@ RAG_CANDIDATE_MULTIPLIER = _env_int("RAG_CANDIDATE_MULTIPLIER", 4)  # candidates
 RAG_SYMBOL_BOOST = float(os.getenv("RAG_SYMBOL_BOOST", "0.1"))
 RAG_SECTOR_BOOST = float(os.getenv("RAG_SECTOR_BOOST", "0.05"))
 NEWS_STALE_DAYS = _env_int("NEWS_STALE_DAYS", 30)
+# Prices older than this are flagged on every answer. NEPSE trades Sunday to
+# Thursday, so a few days' gap is normal; holidays can stretch it.
+PRICE_STALE_DAYS = _env_int("PRICE_STALE_DAYS", 7)
 MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 # Time budget for one question, shared by all of its LLM calls and SQL queries;
 # 0 disables it. Each LLM call is also capped at LLM_TIMEOUT_SEC, and the router's

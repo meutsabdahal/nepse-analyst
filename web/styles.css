@@ -415,6 +415,13 @@ body {
     font-weight: 500;
 }
 
+/* Price or news data older than its threshold. */
+.freshness-chip.stale {
+    color: #f4b4a0;
+    border-color: #a5513a;
+    background: #3d231b;
+}
+
 .quick-facts {
     border: 1px solid #4b4339;
     border-radius: 12px;

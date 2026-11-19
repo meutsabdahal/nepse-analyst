@@ -156,6 +156,7 @@ function titleCase(role) {
     return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+// Fallback for conversations saved before answers carried `freshness`.
 function extractPriceFreshness(dataFreshness) {
     if (!dataFreshness || typeof dataFreshness !== "string") {
         return "";
@@ -274,8 +275,9 @@ function renderSourceMeta(container, meta) {
     }
 
     const basis = meta.answer_basis;
-    const priceFreshness = extractPriceFreshness(meta.data_freshness);
-    if ((basis && basis.label) || priceFreshness) {
+    const freshness = meta.freshness;
+    const priceFreshness = freshness ? "" : extractPriceFreshness(meta.data_freshness);
+    if ((basis && basis.label) || (freshness && freshness.label) || priceFreshness) {
         const row = document.createElement("div");
         row.className = "meta-row";
 
@@ -287,7 +289,15 @@ function renderSourceMeta(container, meta) {
             row.append(basisChip);
         }
 
-        if (priceFreshness) {
+        if (freshness && freshness.label) {
+            // Price and news dates; a warning style (and marker, not colour alone) when either is old.
+            const chip = document.createElement("span");
+            const stale = freshness.prices_stale || freshness.news_stale;
+            chip.className = stale ? "chip freshness-chip stale" : "chip freshness-chip";
+            chip.textContent = stale ? `⚠ ${freshness.label}` : freshness.label;
+            chip.title = freshness.warning || "Prices and news are up to date.";
+            row.append(chip);
+        } else if (priceFreshness) {
             const chip = document.createElement("span");
             chip.className = "chip";
             chip.textContent = priceFreshness;
@@ -576,6 +586,7 @@ async function sendMessage(message) {
                 guardrail_type: payload.guardrail_type,
                 query_language: payload.query_language,
                 data_freshness: payload.data_freshness,
+                freshness: payload.freshness,
                 quick_facts: payload.quick_facts,
                 sources: payload.sources,
                 request_id: payload.request_id,

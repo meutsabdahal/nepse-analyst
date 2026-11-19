@@ -16,6 +16,7 @@ from nepse_analyst import __version__
 from nepse_analyst.chat_helpers import (
     answer_basis,
     build_passage_preview,
+    data_freshness,
     extract_symbol_from_result,
     fetch_quick_facts,
 )
@@ -146,6 +147,7 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         "guardrail_type": result.get("guardrail_type"),
         "query_language": result.get("query_language"),
         "data_freshness": result.get("data_freshness"),
+        "freshness": data_freshness(),
         "quick_facts": quick_facts,
         "sources": {
             "sql": result.get("sql"),
