@@ -317,7 +317,12 @@ function renderSourceMeta(container, meta, messageId) {
         const grid = document.createElement("div");
         grid.className = "facts-grid";
 
-        const pairs = [
+        // Formatted rows (units, as-of dates, empty facts left out) from the API;
+        // the raw fields for answers saved before rows existed.
+        const rows = Array.isArray(meta.quick_facts.rows)
+            ? meta.quick_facts.rows
+            : null;
+        const pairs = rows ? [] : [
             ["Sector", meta.quick_facts.sector],
             ["Close", meta.quick_facts.close_price],
             ["P/E", meta.quick_facts.pe_ratio],
@@ -329,6 +334,25 @@ function renderSourceMeta(container, meta, messageId) {
             ["52W Low", meta.quick_facts.low_52w],
             ["52W High", meta.quick_facts.high_52w],
         ];
+
+        for (const row of rows || []) {
+            const tile = document.createElement("div");
+            tile.className = "fact";
+            const labelEl = document.createElement("p");
+            labelEl.className = "fact-label";
+            labelEl.textContent = row.label;
+            const valueEl = document.createElement("p");
+            valueEl.className = "fact-value";
+            valueEl.textContent = row.value;
+            tile.append(labelEl, valueEl);
+            if (row.as_of) {
+                const asOf = document.createElement("p");
+                asOf.className = "fact-as-of";
+                asOf.textContent = row.as_of;
+                tile.append(asOf);
+            }
+            grid.append(tile);
+        }
 
         for (const [label, value] of pairs) {
             const tile = document.createElement("div");

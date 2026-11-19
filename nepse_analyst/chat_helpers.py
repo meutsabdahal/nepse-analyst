@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from nepse_analyst.config import NEWS_STALE_DAYS, PRICE_STALE_DAYS
 from nepse_analyst.database import get_connection
+from nepse_analyst.number_format import percent, plain, rupee_amount, rupees
 
 
 def extract_symbol_from_result(result: dict[str, Any], query: str) -> str | None:
@@ -80,6 +81,7 @@ def fetch_quick_facts(symbol: str) -> dict[str, Any] | None:
         c.symbol,
         c.name,
         c.sector,
+        c.market_cap,
         lp.close_price,
         lp.trade_date,
         lf.fiscal_year,
@@ -251,3 +253,37 @@ def data_freshness(today: date | None = None) -> dict[str, Any]:
         ),
         "warning": " ".join(problems) or None,
     }
+
+
+def quick_fact_rows(facts: dict[str, Any]) -> list[dict[str, str | None]]:
+    """The quick-facts tiles: label, value with its unit, and what date it is as of.
+
+    Facts with no value are left out rather than shown as "N/A".
+    """
+    trade_date = facts.get("trade_date")
+    fiscal_year = facts.get("fiscal_year")
+    dividend_fy = facts.get("dividend_fy")
+    on_trade_date = f"on {trade_date}" if trade_date else None
+    in_fy = f"FY {fiscal_year}" if fiscal_year else None
+    in_dividend_fy = f"FY {dividend_fy}" if dividend_fy else None
+
+    low, high = facts.get("low_52w"), facts.get("high_52w")
+    range_52w = f"{rupees(low)} – {rupees(high)}" if low is not None and high is not None else None
+
+    candidates = [
+        ("Sector", facts.get("sector"), None),
+        ("Close", rupees(facts.get("close_price")), on_trade_date),
+        ("Market cap", rupee_amount(facts.get("market_cap")), on_trade_date),
+        ("52-week range", range_52w, f"to {trade_date}" if trade_date else None),
+        ("P/E", plain(facts.get("pe_ratio")), in_fy),
+        ("EPS", rupees(facts.get("eps")), in_fy),
+        ("Book value", rupees(facts.get("book_value")), in_fy),
+        ("ROE", percent(facts.get("roe")), in_fy),
+        ("Cash dividend", percent(facts.get("cash_dividend")), in_dividend_fy),
+        ("Bonus shares", percent(facts.get("bonus_shares")), in_dividend_fy),
+    ]
+    return [
+        {"label": label, "value": value, "as_of": as_of}
+        for label, value, as_of in candidates
+        if value not in (None, "")
+    ]

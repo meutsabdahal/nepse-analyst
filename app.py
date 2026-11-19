@@ -19,6 +19,7 @@ from nepse_analyst.chat_helpers import (
     data_freshness,
     extract_symbol_from_result,
     fetch_quick_facts,
+    quick_fact_rows,
 )
 from nepse_analyst.column_labels import column_labels
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
@@ -134,6 +135,8 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     try:
         symbol = extract_symbol_from_result(result, query)
         quick_facts = fetch_quick_facts(symbol) if symbol else None
+        if quick_facts:
+            quick_facts["rows"] = quick_fact_rows(quick_facts)
     except Exception:
         logger.exception("chat_quick_facts_error request_id=%s", request_id)
         quick_facts = None

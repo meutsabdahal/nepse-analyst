@@ -472,6 +472,12 @@ body {
     }
 }
 
+.fact-as-of {
+    margin: 0.1rem 0 0;
+    font-size: 0.66rem;
+    color: var(--muted-text);
+}
+
 .quick-facts {
     border: 1px solid #4b4339;
     border-radius: 12px;
