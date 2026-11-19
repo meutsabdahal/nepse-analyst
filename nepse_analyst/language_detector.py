@@ -1,4 +1,4 @@
-from langdetect import detect, LangDetectException
+from langdetect import LangDetectException, detect
 
 _DEVANAGARI_RANGE = range(0x0900, 0x097F + 1)
 

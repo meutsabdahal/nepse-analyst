@@ -1,6 +1,7 @@
+import re
+
 from nepse_analyst.language_detector import detect_language
 from nepse_analyst.messages import message
-import re
 
 # English prediction/advice signals
 _PREDICTION_KEYWORDS_EN = [

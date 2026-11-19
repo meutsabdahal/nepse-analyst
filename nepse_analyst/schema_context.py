@@ -167,6 +167,10 @@ def build_schema_context(conn: sqlite3.Connection | None) -> str:
 def _cached_context(db_path: str, mtime_ns: int) -> str:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if not present & set(TABLES):
+            # An empty or unrelated file: describe the declared schema, not an empty one.
+            return build_schema_context(None)
         return build_schema_context(conn)
     finally:
         conn.close()

@@ -106,6 +106,13 @@ class SchemaContextTests(unittest.TestCase):
         self.assertIn("oversubscription_rate", text)
         self.assertNotIn("only these values", text)
 
+    def test_empty_database_file_falls_back_to_declared_schema(self):
+        empty = os.path.join(self.tmp.name, "empty.db")
+        sqlite3.connect(empty).close()  # what a read-write connect leaves behind
+        text = get_schema_context(empty)
+        self.assertIn("declared schema", text)
+        self.assertIn("oversubscription_rate", text)
+
     def test_cache_refreshes_when_database_changes(self):
         before = get_schema_context(self.db_path)
         self.assertNotIn("'Microfinance'", before)

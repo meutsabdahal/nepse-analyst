@@ -6,7 +6,7 @@ import sqlite3
 import time
 
 from nepse_analyst import deadline
-from nepse_analyst.config import DB_PATH, DB_BUSY_TIMEOUT_MS, SQL_MAX_ROWS, SQL_TIMEOUT_MS
+from nepse_analyst.config import DB_BUSY_TIMEOUT_MS, DB_PATH, SQL_MAX_ROWS, SQL_TIMEOUT_MS
 
 # SQLite calls the progress handler every this many VM instructions.
 _PROGRESS_INTERVAL = 1000
@@ -201,9 +201,15 @@ def validate_read_only_sql(sql: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def get_connection(read_only: bool = False):
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+def get_connection(read_only: bool = True):
+    """Connection to the app database, read-only unless ``read_only=False``.
 
+    Everything that serves requests only reads, and a read-write connect would
+    create an empty ``nepse.db`` when the database has not been built yet; the
+    schema prompt would then describe a database with no tables. Read-only
+    raises FileNotFoundError instead. The ingestion loader opens its own
+    connection to write.
+    """
     kwargs: dict = {"timeout": max(DB_BUSY_TIMEOUT_MS, 0) / 1000.0}
     db_target = DB_PATH
     if read_only:
@@ -211,6 +217,8 @@ def get_connection(read_only: bool = False):
             raise FileNotFoundError(f"Database not found at {DB_PATH}")
         db_target = f"file:{DB_PATH}?mode=ro"
         kwargs["uri"] = True
+    else:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
     conn = sqlite3.connect(db_target, **kwargs)
     conn.row_factory = sqlite3.Row
@@ -247,7 +255,7 @@ def execute_query(
                 return _failure("Request time limit reached before the query could run.")
             timeout_ms = min(timeout_ms, left * 1000) if timeout_ms else left * 1000
 
-        conn = get_connection(read_only=True)
+        conn = get_connection()
         if timeout_ms:
             stop_at = time.monotonic() + timeout_ms / 1000.0
 
@@ -269,7 +277,7 @@ def execute_query(
             rows, truncated = cursor.fetchall(), False
         return {
             "success": True,
-            "rows": [dict(zip(columns, row)) for row in rows],
+            "rows": [dict(zip(columns, row, strict=True)) for row in rows],
             "columns": columns,
             "row_count": len(rows),
             "truncated": truncated,

@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from nepse_analyst import sectors
 from nepse_analyst.ingestion import Loader, Sources
+from nepse_analyst.ingestion.parsing import canonical_index_name
 from nepse_analyst.ingestion.records import (
     Company,
     Dividend,
@@ -18,14 +19,13 @@ from nepse_analyst.ingestion.records import (
     NewsArticle,
     PriceBar,
 )
-from nepse_analyst.ingestion.parsing import canonical_index_name
 from nepse_analyst.ingestion.sources.base import PriceSource
 from nepse_analyst.ingestion.sources.fallback import FallbackPriceSource
 from nepse_analyst.ingestion.sources.github_open_data import GitHubOpenDataSource
 from nepse_analyst.ingestion.sources.kaggle_csv import KaggleCsvCompanySource
 from nepse_analyst.ingestion.sources.merolagani import (
-    parse_company_list,
     normalize_fiscal_year,
+    parse_company_list,
     parse_dividends,
     parse_fundamentals,
 )

@@ -62,7 +62,7 @@ class KaggleCsvCompanySource:
         unmapped = sorted(set(df["sector"]) - sectors.LISTING_SECTOR_LABELS.keys())
         if unmapped:
             raise ValueError(f"Unmapped sector labels in {self.csv_path.name}: {unmapped}")
-        df["sector"] = [sectors.sector_from_listing(s, n) for s, n in zip(df["sector"], df["name"])]
+        df["sector"] = [sectors.sector_from_listing(s, n) for s, n in zip(df["sector"], df["name"], strict=True)]
         for col in ("listed_shares", "paid_up_value", "total_paid_up"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.drop_duplicates(subset=["symbol"], keep="first")

@@ -2,12 +2,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import chromadb
 import numpy as np
 
 from nepse_analyst import corpus_stats, retriever  # retriever applies the NumPy shim chromadb needs
 from nepse_analyst.ingestion.loader import index_news_in_chroma
-
-import chromadb
 
 
 def _doc(i: int, published_at: str) -> dict:

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from nepse_analyst.schema_context import get_schema_context
 
-
 # The schema section is generated from the database: see schema_context.py.
 
 

@@ -1,16 +1,17 @@
 import time
 
 import chromadb
+
+from nepse_analyst import corpus_stats
 from nepse_analyst.config import (
-    VECTOR_STORE_DIR,
-    NEWS_COLLECTION,
-    TOP_K_RAG,
     CORPUS_STATS_TTL_SEC,
+    NEWS_COLLECTION,
     RAG_CANDIDATE_MULTIPLIER,
     RAG_SECTOR_BOOST,
     RAG_SYMBOL_BOOST,
+    TOP_K_RAG,
+    VECTOR_STORE_DIR,
 )
-from nepse_analyst import corpus_stats
 from nepse_analyst.embeddings import encode_query
 from nepse_analyst.news_tags import sector_key, split_tags, symbol_key
 
@@ -56,7 +57,7 @@ def _query(collection, embedding: list[float], n_results: int, where: dict | Non
     res = collection.query(**kwargs)
     if not res["ids"] or not res["ids"][0]:
         return []
-    return list(zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]))
+    return list(zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0], strict=True))
 
 
 def search(

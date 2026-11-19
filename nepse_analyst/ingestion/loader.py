@@ -33,8 +33,6 @@ from nepse_analyst.config import (
 )
 from nepse_analyst.database import FULL_SCHEMA_SQL
 from nepse_analyst.ingestion.records import NewsArticle
-from nepse_analyst.news_tags import tag_metadata
-from nepse_analyst.sectors import FUNDAMENTALS_EXCLUDED_SECTORS, is_promoter_share
 from nepse_analyst.ingestion.sources.base import (
     CompanySource,
     FundamentalsSource,
@@ -42,6 +40,8 @@ from nepse_analyst.ingestion.sources.base import (
     NewsSource,
     PriceSource,
 )
+from nepse_analyst.news_tags import tag_metadata
+from nepse_analyst.sectors import FUNDAMENTALS_EXCLUDED_SECTORS, is_promoter_share
 
 STEPS: tuple[str, ...] = ("companies", "prices", "indices", "fundamentals", "ipos", "news")
 

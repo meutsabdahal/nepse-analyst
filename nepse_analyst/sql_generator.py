@@ -1,8 +1,8 @@
 import re
 
 from nepse_analyst import database, deadline, llm
-from nepse_analyst.prompts import build_sql_prompt
 from nepse_analyst.config import MAX_SQL_RETRIES
+from nepse_analyst.prompts import build_sql_prompt
 
 
 def clean_sql(raw: str) -> str:

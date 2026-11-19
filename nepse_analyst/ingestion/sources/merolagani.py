@@ -165,6 +165,14 @@ def parse_fundamentals(soup: BeautifulSoup, symbol: str) -> list[Fundamental]:
     ]
 
 
+def _col_index(header: list[str], *needles: str) -> int | None:
+    """Index of the first header cell containing any of ``needles``."""
+    for i, name in enumerate(header):
+        if any(n in name for n in needles):
+            return i
+    return None
+
+
 def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
     by_fy: dict[str, dict[str, Any]] = {}
 
@@ -217,15 +225,8 @@ def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
         if not header or not body:
             continue
         hdr = [slug(h) for h in header]
-
-        def col_index(*needles: str) -> int | None:
-            for i, name in enumerate(hdr):
-                if any(n in name for n in needles):
-                    return i
-            return None
-
-        fy_idx = col_index("fiscal year", "fy")
-        val_idx = col_index("value", "cash", "dividend", "bonus", "stock")
+        fy_idx = _col_index(hdr, "fiscal year", "fy")
+        val_idx = _col_index(hdr, "value", "cash", "dividend", "bonus", "stock")
         if fy_idx is None or val_idx is None:
             continue
         field = "bonus_shares" if "bonus" in table_text else "cash_dividend"

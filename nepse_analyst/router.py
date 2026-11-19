@@ -1,9 +1,10 @@
 import re
+
 from nepse_analyst import ambiguous_symbols, llm
 from nepse_analyst.config import ROUTER_TIMEOUT_SEC
+from nepse_analyst.database import get_connection
 from nepse_analyst.guardrails import get_guardrail_type
 from nepse_analyst.language_detector import detect_language
-from nepse_analyst.database import get_connection
 from nepse_analyst.prompts import build_router_prompt
 
 # Valid route labels returned by the LLM

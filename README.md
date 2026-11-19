@@ -237,9 +237,14 @@ Reports are written to `evaluation/results/` as JSON.
 
 ## Tests
 
-Run regression tests:
+Run the linter and the regression tests (the same two checks CI runs, `.github/workflows/ci.yml`):
 
-`uv run python -m unittest discover -s tests -p "test_*.py"`
+```
+uv run ruff check .
+uv run python -m unittest discover -s tests -p "test_*.py"
+```
+
+`uv sync` installs the `dev` dependency group (ruff) by default. The ruff rules are set in `pyproject.toml` under `[tool.ruff]`; `uv run ruff check . --fix` applies the automatic fixes (import sorting). The tests need no built database, vector store or model download, so they run in a fresh checkout.
 
 Tip: keep using `uv run` for scripts and tests instead of relying on shell activation.
 

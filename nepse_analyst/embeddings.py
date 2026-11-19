@@ -1,4 +1,5 @@
 from sentence_transformers import SentenceTransformer
+
 from nepse_analyst.config import EMBEDDING_MODEL
 
 _model = None  # module-level singleton

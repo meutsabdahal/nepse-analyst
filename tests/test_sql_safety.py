@@ -61,6 +61,22 @@ class SqlSafetyTests(unittest.TestCase):
 
 
 
+class ConnectionTests(unittest.TestCase):
+    def test_reading_a_missing_database_does_not_create_it(self) -> None:
+        import os
+        import tempfile
+
+        from nepse_analyst import database
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "processed", "nepse.db")
+            with patch.object(database, "DB_PATH", path):
+                with self.assertRaises(FileNotFoundError):
+                    database.get_connection()
+                self.assertFalse(database.execute_query("SELECT 1")["success"])
+            self.assertFalse(os.path.exists(os.path.dirname(path)))
+
+
 class QueryLimitTests(unittest.TestCase):
     def test_runaway_query_is_stopped_at_the_time_limit(self) -> None:
         start = time.monotonic()
