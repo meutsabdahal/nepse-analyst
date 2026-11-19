@@ -51,6 +51,11 @@ MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
 REQUEST_TIMEOUT_SEC = _env_int("REQUEST_TIMEOUT_SEC", 60)
 LLM_TIMEOUT_SEC = _env_int("LLM_TIMEOUT_SEC", 120)
 ROUTER_TIMEOUT_SEC = _env_int("ROUTER_TIMEOUT_SEC", 15)
+
+# /api/chat rate limits per client IP (0 disables a window). Every chat request
+# can make several paid LLM calls. Counts are kept in-process (per worker).
+CHAT_RATE_LIMIT_PER_MINUTE = _env_int("CHAT_RATE_LIMIT_PER_MINUTE", 10)
+CHAT_RATE_LIMIT_PER_DAY = _env_int("CHAT_RATE_LIMIT_PER_DAY", 200)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 CORPUS_STATS_TTL_SEC = _env_int("CORPUS_STATS_TTL_SEC", 60)
 DB_BUSY_TIMEOUT_MS = _env_int("DB_BUSY_TIMEOUT_MS", 5000)

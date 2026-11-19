@@ -516,6 +516,24 @@ async function sendMessage(message) {
             signal: state.abortController.signal,
         });
 
+        if (response.status === 429) {
+            const seconds = Number(response.headers.get("Retry-After"));
+            let wait = "";
+            if (seconds > 0) {
+                const amount = seconds < 120 ? `${seconds} seconds`
+                    : seconds < 7200 ? `${Math.ceil(seconds / 60)} minutes`
+                    : `${Math.ceil(seconds / 3600)} hours`;
+                wait = ` Try again in about ${amount}.`;
+            }
+            appendMessageToThread(
+                requestThreadId,
+                "assistant",
+                `You have asked a lot of questions in a short time.${wait}`,
+                { success: false, route: "SYSTEM", query_language: "en", error: "Rate limited (HTTP 429)" }
+            );
+            return;
+        }
+
         if (!response.ok) {
             throw new Error(`Request failed with status ${response.status}`);
         }

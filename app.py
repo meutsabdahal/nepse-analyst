@@ -7,7 +7,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -17,8 +17,10 @@ from nepse_analyst.chat_helpers import (
     extract_symbol_from_result,
     fetch_quick_facts,
 )
+from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
 from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
 from nepse_analyst.pipeline import run
+from nepse_analyst.rate_limit import SlidingWindowLimiter, retry_after_header
 
 BASE_DIR = Path(__file__).resolve().parent
 WEB_DIR = BASE_DIR / "web"
@@ -32,6 +34,33 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 logger = logging.getLogger("nepse_analyst.app")
+
+
+chat_limiter = SlidingWindowLimiter(
+    [(CHAT_RATE_LIMIT_PER_MINUTE, 60.0), (CHAT_RATE_LIMIT_PER_DAY, 86_400.0)]
+)
+
+
+def client_key(request: Request) -> str:
+    """The client's IP address.
+
+    Behind a reverse proxy this is the proxy's address unless uvicorn is told
+    to trust it: run with --proxy-headers --forwarded-allow-ips=<proxy IP>, so
+    request.client comes from X-Forwarded-For. Headers are not read here, as
+    any client can send them.
+    """
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_chat_rate_limit(request: Request) -> None:
+    retry_after = chat_limiter.hit(client_key(request))
+    if retry_after is not None:
+        logger.warning("chat_rate_limited client=%s retry_after_sec=%.0f", client_key(request), retry_after)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many questions from this address. Please wait and try again.",
+            headers={"Retry-After": retry_after_header(retry_after)},
+        )
 
 
 class ChatRequest(BaseModel):
@@ -60,7 +89,7 @@ def example_questions() -> dict[str, list[str]]:
     return {"examples": EXAMPLE_QUESTIONS}
 
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(enforce_chat_rate_limit)])
 def chat(payload: ChatRequest) -> dict[str, Any]:
     query = payload.message.strip()
     if not query:

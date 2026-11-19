@@ -167,6 +167,14 @@ Steps run in this order: `companies`, `prices`, `indices`, `fundamentals`, `ipos
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
+### Deploying publicly
+
+Every `/api/chat` request can make several LLM calls, which cost credits with Groq or Hugging Face. The endpoint is rate limited per client IP: `CHAT_RATE_LIMIT_PER_MINUTE` (default 10) and `CHAT_RATE_LIMIT_PER_DAY` (default 200). Over the limit it returns HTTP 429 with a `Retry-After` header.
+
+- **Behind a reverse proxy or load balancer**, every request arrives from the proxy's address, so all users would share one limit. Tell uvicorn to trust the proxy so the client address comes from `X-Forwarded-For`: `uvicorn app:app --proxy-headers --forwarded-allow-ips=<proxy IP or range>`. The app itself never reads forwarding headers, since any client can send them.
+- **Counts are kept in memory per process.** With several uvicorn workers or instances, each counts separately, so the effective limit is multiplied by their number, and counts reset on restart. For that setup, rate limit at the proxy or move the counts to a shared store such as Redis.
+- **There is no authentication.** The limit slows abuse from one address; it does not stop many addresses. Set a spending cap with the LLM provider as well.
+
 ## Data Sources
 
 All ingestion goes through `nepse_analyst.ingestion.Loader`. Sources only return normalized records (`ingestion/records.py`); the loader owns every database and vector-store write.
