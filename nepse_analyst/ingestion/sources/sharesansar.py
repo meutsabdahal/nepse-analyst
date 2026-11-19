@@ -81,7 +81,8 @@ class SharesansarIPOSource:
                     listing_date=str(row.get("listing_date") or "").strip() or None,
                     issue_price=extract_float(row.get("issue_price")),
                     shares_issued=extract_int(row.get("total_units")),
-                    oversubscription_rate=extract_float(row.get("ratio_value")),
+                    # ratio_value is the rights-share ratio, not oversubscription; this
+                    # feed has no applicant counts, so oversubscription stays unknown.
                 )
             )
         return issues

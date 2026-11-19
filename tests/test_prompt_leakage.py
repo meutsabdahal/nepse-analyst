@@ -42,7 +42,8 @@ def _jaccard(a: str, b: str) -> float:
 
 def _load_sql_benchmark() -> list[dict]:
     data = json.loads(BENCHMARK_PATH.read_text(encoding="utf-8"))
-    return data["sql_benchmark"]
+    # Deferred cases are checked too, so they cannot leak back in before they are restored.
+    return data["sql_benchmark"] + data.get("deferred_sql_benchmark", [])
 
 
 class PromptLeakageTests(unittest.TestCase):

@@ -208,26 +208,6 @@
             "notes": "EPS strictly increasing across 3 consecutive fiscal years (two year-on-year increases). The previous reference SQL listed every non-null EPS row. No symbol has 3+ fiscal years of EPS in the 2026-11-17 data, so the reference result is empty."
         },
         {
-            "id": "Q6",
-            "question": "What are the top 5 most oversubscribed IPOs in NEPSE history?",
-            "tables_used": [
-                "ipos"
-            ],
-            "difficulty": "easy",
-            "ground_truth": {
-                "snapshot_at": "2026-11-19",
-                "row_count": 0,
-                "rows": [],
-                "status": "data_unavailable",
-                "reason": "ipos.oversubscription_rate is NULL for all rows"
-            },
-            "ground_truth_sql": "SELECT symbol, company_name, oversubscription_rate FROM ipos WHERE oversubscription_rate IS NOT NULL ORDER BY oversubscription_rate DESC LIMIT 5",
-            "match_columns": [
-                "symbol"
-            ],
-            "notes": "Need oversubscription enrichment from issue/applicant data source to make this benchmark answerable. ipos.oversubscription_rate is NULL for all rows."
-        },
-        {
             "id": "Q7",
             "question": "Compare total bonus shares issued by the banking sector vs. the hydropower sector in FY 2080/81.",
             "tables_used": [
@@ -427,6 +407,22 @@
                 "listing_premium_pct"
             ],
             "notes": "High IPO listing premiums in this period are plausible for NEPSE market conditions around 2019-2021 listings."
+        }
+    ],
+    "deferred_sql_benchmark": [
+        {
+            "id": "Q6",
+            "question": "What are the top 5 most oversubscribed IPOs in NEPSE history?",
+            "tables_used": [
+                "ipos"
+            ],
+            "difficulty": "easy",
+            "ground_truth_sql": "SELECT symbol, company_name, oversubscription_rate FROM ipos WHERE oversubscription_rate IS NOT NULL ORDER BY oversubscription_rate DESC LIMIT 5",
+            "match_columns": [
+                "symbol"
+            ],
+            "notes": "Removed from scoring on 2026-11-19 (see deferred_reason).",
+            "deferred_reason": "No source for IPO applicant counts: ipos.total_applicants and ipos.oversubscription_rate are NULL for every row. Sharesansar existing-issues, NepaliPaisa and Merolagani list units, dates and issue manager only; the CDSC and Sharesansar result pages are per-BOID allotment checks. Restore this case once a source fills those columns."
         }
     ],
     "rag_benchmark": [
