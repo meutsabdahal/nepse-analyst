@@ -20,6 +20,7 @@ from nepse_analyst.chat_helpers import (
     extract_symbol_from_result,
     fetch_quick_facts,
 )
+from nepse_analyst.column_labels import column_labels
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
 from nepse_analyst.example_questions import EXAMPLE_QUESTIONS
 from nepse_analyst.messages import message
@@ -137,6 +138,7 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         logger.exception("chat_quick_facts_error request_id=%s", request_id)
         quick_facts = None
 
+    rows_preview = (result.get("sql_rows") or [])[:20]
     return {
         "request_id": request_id,
         "query": query,
@@ -151,7 +153,8 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         "quick_facts": quick_facts,
         "sources": {
             "sql": result.get("sql"),
-            "sql_rows_preview": (result.get("sql_rows") or [])[:20],
+            "sql_rows_preview": rows_preview,
+            "columns": column_labels(list(rows_preview[0])) if rows_preview else [],
             "passages": build_passage_preview(result.get("passages") or []),
         },
         "error": public_error(result),

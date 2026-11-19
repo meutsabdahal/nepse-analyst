@@ -422,6 +422,56 @@ body {
     background: #3d231b;
 }
 
+.column-unit {
+    font-weight: 400;
+    color: var(--muted-text);
+}
+
+.citation {
+    color: var(--button);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.citation:hover,
+.citation:focus-visible {
+    text-decoration: underline;
+}
+
+.passage-number {
+    color: var(--muted-text);
+    font-weight: 600;
+}
+
+.passage-title a {
+    color: var(--main-text);
+    text-decoration: underline;
+    text-decoration-color: var(--line);
+    text-underline-offset: 2px;
+}
+
+.passage-title a:hover,
+.passage-title a:focus-visible {
+    text-decoration-color: currentColor;
+}
+
+/* Briefly mark the card a citation jumped to. */
+.passage-highlight {
+    animation: passage-flash 1.6s ease-out;
+}
+
+@keyframes passage-flash {
+    from { box-shadow: 0 0 0 2px var(--button); }
+    to { box-shadow: 0 0 0 2px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .passage-highlight {
+        animation: none;
+        box-shadow: 0 0 0 2px var(--button);
+    }
+}
+
 .quick-facts {
     border: 1px solid #4b4339;
     border-radius: 12px;

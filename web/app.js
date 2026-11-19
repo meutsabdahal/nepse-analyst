@@ -269,7 +269,7 @@ const BASIS_HINTS = {
     declined: "Outside what NEPSE Analyst answers (predictions or investment advice).",
 };
 
-function renderSourceMeta(container, meta) {
+function renderSourceMeta(container, meta, messageId) {
     if (!meta) {
         return;
     }
@@ -374,7 +374,7 @@ function renderSourceMeta(container, meta) {
     details.className = "source-disclosure";
 
     const summary = document.createElement("summary");
-    summary.textContent = "Source transparency";
+    summary.textContent = "Sources";
     details.append(summary);
 
     if (meta.sources.sql) {
@@ -384,26 +384,40 @@ function renderSourceMeta(container, meta) {
         details.append(sql);
     }
 
-    if (Array.isArray(meta.sources.sql_rows_preview) && meta.sources.sql_rows_preview.length > 0) {
+    const rows = meta.sources.sql_rows_preview;
+    if (Array.isArray(rows) && rows.length > 0) {
         const table = document.createElement("table");
         table.className = "source-table";
 
-        const columns = Object.keys(meta.sources.sql_rows_preview[0]);
+        // Readable labels and units from the API; raw names for older saved answers.
+        const columns = Array.isArray(meta.sources.columns) && meta.sources.columns.length > 0
+            ? meta.sources.columns
+            : Object.keys(rows[0]).map((key) => ({ key, label: key, unit: null, description: null }));
         const thead = document.createElement("thead");
         const trHead = document.createElement("tr");
         for (const col of columns) {
             const th = document.createElement("th");
-            th.textContent = col;
+            th.textContent = col.label;
+            if (col.unit) {
+                const unit = document.createElement("span");
+                unit.className = "column-unit";
+                unit.textContent = ` (${col.unit})`;
+                th.append(unit);
+            }
+            if (col.description) {
+                th.title = col.description;
+            }
             trHead.append(th);
         }
         thead.append(trHead);
 
         const tbody = document.createElement("tbody");
-        for (const rowData of meta.sources.sql_rows_preview.slice(0, 12)) {
+        for (const rowData of rows.slice(0, 12)) {
             const tr = document.createElement("tr");
             for (const col of columns) {
                 const td = document.createElement("td");
-                td.textContent = formatValue(rowData[col]);
+                const value = rowData[col.key];
+                td.textContent = col.format === "year" && typeof value === "number" ? String(value) : formatValue(value);
                 tr.append(td);
             }
             tbody.append(tr);
@@ -414,17 +428,33 @@ function renderSourceMeta(container, meta) {
     }
 
     if (Array.isArray(meta.sources.passages)) {
-        for (const passage of meta.sources.passages) {
+        meta.sources.passages.forEach((passage, index) => {
+            const number = passage.number || index + 1;
             const card = document.createElement("article");
             card.className = "passage";
+            card.id = sourceCardId(messageId, number);
 
             const title = document.createElement("p");
             title.className = "passage-title";
-            title.textContent = passage.title || "Untitled";
+            const badge = document.createElement("span");
+            badge.className = "passage-number";
+            badge.textContent = `[${number}] `;
+            title.append(badge);
+            if (passage.url) {
+                const link = document.createElement("a");
+                link.href = passage.url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = passage.title || "Untitled";
+                title.append(link);
+            } else {
+                title.append(passage.title || "Untitled");
+            }
 
             const detailsLine = document.createElement("p");
             detailsLine.className = "passage-meta";
-            detailsLine.textContent = `Source: ${passage.source || "unknown"} | Date: ${passage.published_at || "unknown"} | Score: ${formatValue(passage.relevance_score)}`;
+            const sourceName = passage.source_name || passage.source || "Unknown source";
+            detailsLine.textContent = `${sourceName} · ${passage.published_at || "date unknown"}`;
 
             const content = document.createElement("p");
             content.className = "passage-content";
@@ -432,10 +462,67 @@ function renderSourceMeta(container, meta) {
 
             card.append(title, detailsLine, content);
             details.append(card);
-        }
+        });
     }
 
     container.append(details);
+}
+
+function sourceCardId(messageId, number) {
+    return `source-${messageId}-${number}`;
+}
+
+// Answer text with each [n] that matches a news card turned into a link to it.
+function renderAnswerText(body, text, messageId, passages) {
+    const count = Array.isArray(passages) ? passages.length : 0;
+    if (count === 0) {
+        body.textContent = text;
+        return;
+    }
+    const pattern = /\[(\d+)\]/g;
+    let last = 0;
+    for (const match of text.matchAll(pattern)) {
+        const number = Number(match[1]);
+        if (number < 1 || number > count) {
+            continue;
+        }
+        body.append(text.slice(last, match.index));
+        const link = document.createElement("a");
+        link.className = "citation";
+        link.href = `#${sourceCardId(messageId, number)}`;
+        link.textContent = match[0];
+        link.title = passages[number - 1].title || `Source ${number}`;
+        link.addEventListener("click", (event) => {
+            event.preventDefault();
+            showSourceCard(messageId, number);
+        });
+        body.append(link);
+        last = match.index + match[0].length;
+    }
+    body.append(text.slice(last));
+}
+
+function showSourceCard(messageId, number) {
+    const card = document.getElementById(sourceCardId(messageId, number));
+    if (!card) {
+        return;
+    }
+    const panel = card.closest("details");
+    if (panel) {
+        panel.open = true;
+    }
+    // Scroll only the message feed: scrollIntoView would also scroll clipped
+    // ancestors sideways and shift the whole layout.
+    const feed = el.messageFeed;
+    const offset = card.getBoundingClientRect().top - feed.getBoundingClientRect().top;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    feed.scrollTo({
+        top: feed.scrollTop + offset - (feed.clientHeight - card.offsetHeight) / 2,
+        behavior: reduceMotion ? "auto" : "smooth",
+    });
+    card.classList.remove("passage-highlight");
+    void card.offsetWidth; // restart the highlight animation on repeat clicks
+    card.classList.add("passage-highlight");
 }
 
 function renderMessages() {
@@ -469,10 +556,12 @@ function renderMessages() {
         const meta = clone.querySelector(".message-meta");
 
         role.textContent = titleCase(message.role);
-        body.textContent = message.content;
-
         if (message.role === "assistant") {
-            renderSourceMeta(meta, message.meta);
+            const passages = message.meta && message.meta.sources ? message.meta.sources.passages : null;
+            renderAnswerText(body, message.content, message.id, passages);
+            renderSourceMeta(meta, message.meta, message.id);
+        } else {
+            body.textContent = message.content;
         }
 
         el.messageFeed.append(clone);

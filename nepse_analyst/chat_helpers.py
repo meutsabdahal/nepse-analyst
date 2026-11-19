@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
+from urllib.parse import urlparse
 
 from nepse_analyst.config import NEWS_STALE_DAYS, PRICE_STALE_DAYS
 from nepse_analyst.database import get_connection
@@ -113,19 +114,35 @@ def fetch_quick_facts(symbol: str) -> dict[str, Any] | None:
         conn.close()
 
 
+_SOURCE_NAMES = {"sharesansar": "ShareSansar", "nepse_alpha": "NepseAlpha", "merolagani": "Merolagani"}
+
+
+def _safe_url(value: Any) -> str | None:
+    """The article link, if it is an http(s) URL (never javascript: or data:)."""
+    url = str(value or "").strip()
+    return url if urlparse(url).scheme in ("http", "https") and urlparse(url).netloc else None
+
+
 def build_passage_preview(passages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Trim passage payloads for cleaner API responses and smaller frontend payloads."""
+    """The news cards under an answer.
+
+    ``number`` matches the [n] citations in the answer: the answer prompt numbers
+    passages from 1 in this same order. The retrieval score is not sent; it means
+    nothing to readers.
+    """
     output: list[dict[str, Any]] = []
-    for passage in passages[:8]:
+    for number, passage in enumerate(passages[:8], start=1):
         content = str(passage.get("content") or "").strip()
+        source = str(passage.get("source") or "").strip()
         output.append(
             {
+                "number": number,
                 "title": str(passage.get("title") or "Untitled"),
-                "source": str(passage.get("source") or "unknown"),
+                "url": _safe_url(passage.get("url")),
+                "source": source or "unknown",
+                "source_name": _SOURCE_NAMES.get(source.lower(), source.replace("_", " ").title() or "Unknown source"),
                 "published_at": str(passage.get("published_at") or "unknown"),
-                "relevance_score": passage.get("relevance_score"),
-                "content_preview": content[:420]
-                + ("..." if len(content) > 420 else ""),
+                "content_preview": content[:420] + ("..." if len(content) > 420 else ""),
             }
         )
     return output
