@@ -3,7 +3,7 @@ import logging
 import re
 import time
 
-from nepse_analyst.router import classify
+from nepse_analyst.router import classify, price_range_metric
 from nepse_analyst.guardrails import build_decline_response, append_disclaimer
 from nepse_analyst.sql_generator import generate_and_execute
 from nepse_analyst.retriever import search, get_corpus_stats
@@ -309,17 +309,9 @@ def _build_dividend_sector_coverage_fallback(query: str, language: str) -> dict 
 
 def _is_price_range_query(query: str, entities: dict) -> bool:
     """Detect requests for a 52-week style high/low range answer."""
-    metric = entities.get("metric")
-    if metric in {"price_range", "price_high", "price_low"}:
+    if entities.get("metric") in {"price_range", "price_high", "price_low"}:
         return True
-
-    q = query.lower()
-    if "52-week" in q or "52 week" in q:
-        return True
-
-    asks_high_low = "high" in q and "low" in q
-    asks_year_window = "year" in q or "52" in q
-    return asks_high_low and asks_year_window
+    return price_range_metric(query) is not None
 
 
 def _rows_have_price_range_values(rows: list[dict]) -> bool:

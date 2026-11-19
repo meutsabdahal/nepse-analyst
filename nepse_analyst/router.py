@@ -42,6 +42,55 @@ _SECTOR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 )
 
 
+# Financial metric keywords, checked in this order on word boundaries ("eps"
+# not inside "NEPSE" or "steps", "roe" not inside "heroes"); a plural "s" is allowed.
+_METRIC_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("eps", "eps"),
+    ("earnings per share", "eps"),
+    ("p/e", "pe_ratio"),
+    ("pe ratio", "pe_ratio"),
+    ("price to earnings", "pe_ratio"),
+    ("book value", "book_value"),
+    ("roe", "roe"),
+    ("return on equity", "roe"),
+    ("dividend", "dividend"),
+    ("bonus share", "bonus_shares"),
+    ("market cap", "market_cap"),
+    ("turnover", "turnover"),
+    ("net profit", "net_profit"),
+    ("revenue", "revenue"),
+)
+_METRIC_PATTERNS = tuple(
+    (re.compile(r"(?<!\w)" + re.escape(kw) + r"s?(?!\w)"), metric) for kw, metric in _METRIC_KEYWORDS
+)
+
+# The 52-week price range needs explicit wording; "high" and "low" alone are
+# too common ("highest EPS", "below book value").
+_FIFTY_TWO_WEEK = re.compile(r"(?<!\w)52[\s-]?weeks?(?!\w)")
+_HIGH_AND_LOW = re.compile(r"\b(?:high\s*(?:and|&|/|-)\s*low|low\s*(?:and|&|/|-)\s*high)\b")
+_HIGH = re.compile(r"\bhigh\b")
+_LOW = re.compile(r"\blow\b")
+
+
+def price_range_metric(query: str) -> str | None:
+    """'price_range', 'price_high' or 'price_low' for a 52-week high/low question, else None.
+
+    Requires "52-week" (or "52 week") or "high and low". With "52-week" and only
+    one of the words "high" / "low", the question asks for just that end.
+    """
+    q = query.lower()
+    if _HIGH_AND_LOW.search(q):
+        return "price_range"
+    if not _FIFTY_TWO_WEEK.search(q):
+        return None
+    has_high, has_low = bool(_HIGH.search(q)), bool(_LOW.search(q))
+    if has_high and not has_low:
+        return "price_high"
+    if has_low and not has_high:
+        return "price_low"
+    return "price_range"
+
+
 def _load_symbols() -> set[str]:
     """Load all company symbols from the DB for entity extraction."""
     try:
@@ -98,32 +147,11 @@ def extract_entities(query: str) -> dict:
             detected_sector = canonical
             break
 
-    # Metric detection — what financial metric is being asked about
-    metric = None
-    metric_keywords = {
-        "eps": "eps",
-        "earnings per share": "eps",
-        "p/e": "pe_ratio",
-        "pe ratio": "pe_ratio",
-        "price to earnings": "pe_ratio",
-        "book value": "book_value",
-        "roe": "roe",
-        "return on equity": "roe",
-        "dividend": "dividend",
-        "bonus share": "bonus_shares",
-        "market cap": "market_cap",
-        "turnover": "turnover",
-        "52-week": "price_range",
-        "52 week": "price_range",
-        "high": "price_high",
-        "low": "price_low",
-        "net profit": "net_profit",
-        "revenue": "revenue",
-    }
-    for kw, metric_name in metric_keywords.items():
-        if kw in q_lower:
-            metric = metric_name
-            break
+    # Metric detection — what financial metric is being asked about.
+    # An explicit 52-week / high-and-low question wins over other keywords.
+    metric = price_range_metric(query)
+    if metric is None:
+        metric = next((name for pattern, name in _METRIC_PATTERNS if pattern.search(q_lower)), None)
 
     # Time period detection
     time_period = None

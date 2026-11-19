@@ -105,6 +105,14 @@ class PipelineContractTests(unittest.TestCase):
             pipeline.llm.call = orig_llm_call
             pipeline._build_symbol_metric_fallback = orig_fallback
 
+    def test_price_range_query_needs_explicit_wording(self) -> None:
+        no_metric = {"metric": None}
+        self.assertFalse(pipeline._is_price_range_query(
+            "Which bank has the highest EPS and trades below book value over the past year?", no_metric))
+        self.assertFalse(pipeline._is_price_range_query("Lowest P/E in 2081/82", no_metric))
+        self.assertTrue(pipeline._is_price_range_query("NABIL 52-week high and low", no_metric))
+        self.assertTrue(pipeline._is_price_range_query("anything", {"metric": "price_high"}))
+
     def test_sql_empty_rows_uses_price_range_fallback(self) -> None:
         orig_classify = pipeline.classify
         orig_generate = pipeline.generate_and_execute
