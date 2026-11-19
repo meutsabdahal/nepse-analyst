@@ -37,6 +37,8 @@ class FakeCompanies:
         return [
             Company("NABIL", "Nabil Bank Limited", sectors.COMMERCIAL_BANKS, 100),
             Company("NABILP", "Nabil Bank Limited Promoter Share", sectors.OTHERS, 10),
+            Company("NABILPO", "Nabil Bank Limited Promoter Share II", sectors.PROMOTER_SHARES, 10),
+            Company("NADEP", "Nadep Laghubitta Bittiya Sanstha Ltd.", sectors.MICROFINANCE, 20),
             Company("AHPC", "Arun Valley Hydropower Development Co. Ltd.", sectors.HYDROPOWER, 50),
             Company("NBF2", "Nabil Balanced Fund 2", sectors.MUTUAL_FUNDS, 5),
         ]
@@ -150,9 +152,10 @@ class LoaderTests(unittest.TestCase):
     def test_full_run_populates_every_table(self):
         results = self.loader.run()
 
-        self.assertEqual(self.query("SELECT COUNT(*) FROM companies")[0][0], 4)
-        # Promoter (P suffix) and digit symbols are skipped for prices.
-        self.assertEqual(self.prices.calls, ["AHPC", "NABIL"])
+        self.assertEqual(self.query("SELECT COUNT(*) FROM companies")[0][0], 6)
+        # Promoter shares (by name or sector) and digit symbols are skipped for prices;
+        # NADEP ends in P but is an ordinary listing.
+        self.assertEqual(self.prices.calls, ["AHPC", "NABIL", "NADEP"])
         self.assertEqual(self.query("SELECT COUNT(*) FROM price_history")[0][0], 3)
         self.assertEqual(results["indices"]["rows"], 3)
         # Mutual funds are excluded from fundamentals.
@@ -176,14 +179,14 @@ class LoaderTests(unittest.TestCase):
         self.loader.run(["companies", "prices", "fundamentals"])
         self.loader.run(["companies", "prices", "fundamentals"])
         self.assertEqual(self.query("SELECT COUNT(*) FROM price_history")[0][0], 3)
-        self.assertEqual(self.query("SELECT COUNT(*) FROM fundamentals")[0][0], 3)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM fundamentals")[0][0], 5)
 
     def test_market_cap_is_listed_shares_times_latest_close(self):
         self.loader.run(["companies", "prices"])
         self.assertEqual(
             self.query("SELECT symbol, market_cap FROM companies ORDER BY symbol"),
             # NABIL: 100 x 510 (2026-01-02 close, not 2026-01-01). No prices -> NULL.
-            [("AHPC", 15000.0), ("NABIL", 51000.0), ("NABILP", None), ("NBF2", None)],
+            [("AHPC", 15000.0), ("NABIL", 51000.0), ("NABILP", None), ("NABILPO", None), ("NADEP", None), ("NBF2", None)],
         )
 
     def test_reloading_companies_keeps_market_cap(self):
@@ -272,6 +275,13 @@ class KaggleCsvTests(unittest.TestCase):
                 f.write("Name,company_nmae,symbol,Listed_Shares,Paidup_Value,Total_Paidup\nCrypto,X Ltd,XLTD,0,0,0\n")
             with self.assertRaisesRegex(ValueError, "Crypto"):
                 KaggleCsvCompanySource(path).fetch_companies()
+
+    def test_bundled_csv_sectors_promoter_shares(self):
+        by_symbol = {c.symbol: c.sector for c in KaggleCsvCompanySource().fetch_companies()}
+        self.assertEqual(by_symbol["NADEP"], sectors.MICROFINANCE)
+        for symbol in ("NADEPP", "EBLPO", "SJLICP", "SMFBSP"):  # P, PO, filed under Others, no "promoter" in name
+            with self.subTest(symbol=symbol):
+                self.assertEqual(by_symbol[symbol], sectors.PROMOTER_SHARES)
 
     def test_bundled_csv_has_share_counts(self):
         companies = KaggleCsvCompanySource().fetch_companies()

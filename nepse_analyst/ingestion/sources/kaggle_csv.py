@@ -40,7 +40,7 @@ SECTOR_MAP = {
     "Corporate Debenture": sectors.CORPORATE_DEBENTURES,
     "Government Bond": sectors.GOVERNMENT_BONDS,
     "Capital": sectors.OTHERS,
-    "Promotor Share": sectors.OTHERS,
+    "Promotor Share": sectors.PROMOTER_SHARES,
 }
 
 
@@ -79,6 +79,9 @@ class KaggleCsvCompanySource:
         if unmapped:
             raise ValueError(f"Unmapped sector labels in {self.csv_path.name}: {unmapped}")
         df["sector"] = df["sector"].map(SECTOR_MAP)
+        # A few promoter listings are filed under another label; their names say so.
+        promoter = [sectors.is_promoter_share(n, s) for n, s in zip(df["name"], df["sector"])]
+        df.loc[promoter, "sector"] = sectors.PROMOTER_SHARES
         for col in ("listed_shares", "paid_up_value", "total_paid_up"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.drop_duplicates(subset=["symbol"], keep="first")

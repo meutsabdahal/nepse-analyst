@@ -33,7 +33,7 @@ from nepse_analyst.config import (
 from nepse_analyst.database import FULL_SCHEMA_SQL
 from nepse_analyst.ingestion.records import NewsArticle
 from nepse_analyst.news_tags import tag_metadata
-from nepse_analyst.sectors import FUNDAMENTALS_EXCLUDED_SECTORS
+from nepse_analyst.sectors import FUNDAMENTALS_EXCLUDED_SECTORS, is_promoter_share
 from nepse_analyst.ingestion.sources.base import (
     CompanySource,
     FundamentalsSource,
@@ -83,10 +83,10 @@ def default_sources() -> Sources:
     )
 
 
-def is_equity_symbol(symbol: str) -> bool:
-    """Listed equity only: skip debentures, bonds, and promoter-share variants."""
-    text = symbol.strip().upper()
-    return bool(text) and text.isalpha() and not text.endswith("P")
+def is_equity(symbol: str, name: str | None, sector: str | None) -> bool:
+    """Listed equity only: skip debentures and bonds (digits in the symbol) and promoter shares."""
+    text = (symbol or "").strip().upper()
+    return bool(text) and text.isalpha() and not is_promoter_share(name, sector)
 
 
 def normalize_company_name(value: str) -> str:
@@ -144,7 +144,7 @@ class CompanyMatcher:
         name_patterns: list[tuple[re.Pattern[str], str]] = []
         for symbol, name, sector in companies:
             symbol = (symbol or "").strip().upper()
-            if len(symbol) < 2 or not is_equity_symbol(symbol):
+            if len(symbol) < 2 or not is_equity(symbol, name, sector):
                 continue
             self._sector[symbol] = sector
             symbol_alts.append(re.escape(symbol))
@@ -453,7 +453,7 @@ class Loader:
         source = self.sources.prices
         conn = self._connect()
         try:
-            symbols = [s for (s, _, _) in self._company_rows(conn) if is_equity_symbol(s)]
+            symbols = [s for (s, name, sector) in self._company_rows(conn) if is_equity(s, name, sector)]
             if not symbols:
                 raise RuntimeError("No equity symbols in companies table; run the companies step first.")
             if not source.available():

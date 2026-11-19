@@ -15,6 +15,8 @@ COMPANIES = [
     ("API", "Api Power Company Ltd.", "Hydropower"),
     ("NABIL", "Nabil Bank Limited", "Commercial Banks"),
     ("NABILP", "Nabil Bank Limited Promoter Share", "Others"),
+    ("EBLPO", "Everest Bank Limited Promoter Share", "Promoter Shares"),
+    ("NADEP", "Nadep Laghubitta Bittiya Sanstha Ltd.", "Microfinance"),
     ("NIC", "Nic Old Symbol Limited", "Others"),
     ("NICA", "NIC Asia Bank Ltd.", "Commercial Banks"),
     ("NHDL", "Nepal Hydro Developers Ltd.", "Hydropower"),
@@ -64,6 +66,10 @@ class CompanyMatcherTests(unittest.TestCase):
 
     def test_promoter_shares_are_not_tagged(self):
         self.assertEqual(self.m.match("NABILP auction announced"), [])
+        self.assertEqual(self.m.match("EBLPO auction announced"), [])
+
+    def test_symbol_ending_in_p_is_tagged_when_not_a_promoter_share(self):
+        self.assertEqual(self.m.match("NADEP declares dividend"), ["NADEP"])
 
 
 class EnrichArticleTests(unittest.TestCase):
