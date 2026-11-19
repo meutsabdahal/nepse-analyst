@@ -3,13 +3,14 @@ import logging
 import re
 import time
 
+from nepse_analyst import deadline
 from nepse_analyst.router import classify, price_range_metric
 from nepse_analyst.guardrails import build_decline_response, append_disclaimer
 from nepse_analyst.sql_generator import generate_and_execute
 from nepse_analyst.retriever import search, get_corpus_stats
 from nepse_analyst.database import get_connection
 from nepse_analyst import llm
-from nepse_analyst.config import TOP_K_RAG, NEWS_STALE_DAYS
+from nepse_analyst.config import TOP_K_RAG, NEWS_STALE_DAYS, REQUEST_TIMEOUT_SEC
 from nepse_analyst.prompts import (
     build_sql_synthesis_prompt,
     build_rag_synthesis_prompt,
@@ -795,6 +796,17 @@ def _handle_sql(query: str, language: str, entities: dict) -> dict:
 
 def _handle_rag(query: str, language: str, entities: dict) -> dict:
     """Execute the multilingual RAG pathway."""
+    if deadline.expired():  # e.g. the SQL half of a hybrid question used the whole budget
+        return {
+            "success": False,
+            "answer": "",
+            "route": "RAG",
+            "sql": None,
+            "passages": [],
+            "query_language": language,
+            "data_freshness": None,
+            "error": "News search skipped: request time limit reached",
+        }
     # Detected company/sector ranks matching articles higher; it does not filter.
     try:
         passages = search(
@@ -918,10 +930,46 @@ def _handle_direct(query: str, language: str) -> dict:
     }
 
 
+def _timeout_result(route: str, language: str, timeout_sec: float, error: str) -> dict:
+    if language == "ne":
+        answer = (
+            f"यो प्रश्नको उत्तर {timeout_sec:g} सेकेन्डको समय सीमाभित्र तयार गर्न सकिएन। "
+            "कृपया प्रश्नलाई अझ सानो वा स्पष्ट बनाएर फेरि प्रयास गर्नुहोस्।"
+        )
+    else:
+        answer = (
+            f"This question could not be answered within the {timeout_sec:g} s time limit. "
+            "Please try a narrower or more specific question."
+        )
+    return {
+        "success": False,
+        "answer": append_disclaimer(answer, language),
+        "route": route,
+        "sql": None,
+        "sql_rows": [],
+        "answer_source": "timeout",
+        "passages": [],
+        "query_language": language,
+        "data_freshness": None,
+        "error": f"deadline_exceeded: {error}",
+    }
+
+
 # Main entry point
 
 
-def run(query: str, request_id: str | None = None) -> dict:
+def run(query: str, request_id: str | None = None, timeout_sec: float | None = None) -> dict:
+    """Answer one question within a time budget.
+
+    ``timeout_sec`` (default REQUEST_TIMEOUT_SEC; 0 disables) is shared by every
+    LLM call and SQL query the question makes; each gets at most the time left.
+    """
+    timeout_sec = REQUEST_TIMEOUT_SEC if timeout_sec is None else timeout_sec
+    with deadline.request_deadline(timeout_sec):
+        return _run(query, request_id, timeout_sec)
+
+
+def _run(query: str, request_id: str | None, timeout_sec: float) -> dict:
     """
     Process a natural language query end-to-end.
     This is the single function the chat API calls.
@@ -1000,6 +1048,15 @@ def run(query: str, request_id: str | None = None) -> dict:
             result = _handle_direct(query, language)
         else:
             result = _handle_sql(query, language, entities)  # safe fallback
+    except deadline.DeadlineExceeded as e:
+        logger.warning(
+            "pipeline_deadline_exceeded request_id=%s route=%s timeout_sec=%s error=%s",
+            request_id,
+            route,
+            timeout_sec,
+            str(e),
+        )
+        result = _timeout_result(route, language, timeout_sec, str(e))
     except Exception as e:
         logger.exception(
             "pipeline_unhandled_error request_id=%s route=%s error=%s",

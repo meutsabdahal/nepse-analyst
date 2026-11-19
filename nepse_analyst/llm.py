@@ -1,8 +1,9 @@
 import re
-import time
 import logging
 
+from nepse_analyst import deadline
 from nepse_analyst.config import (
+    LLM_TIMEOUT_SEC,
     LLM_PROVIDER,
     GROQ_API_KEY,
     GROQ_MODEL,
@@ -17,7 +18,15 @@ from nepse_analyst.config import (
 logger = logging.getLogger("nepse_analyst.llm")
 
 
-def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
+def call(
+    prompt: str, system: str = "", temperature: float = 0.0, max_timeout_sec: float | None = None
+) -> str:
+    """Call the configured LLM provider.
+
+    Each HTTP request waits at most LLM_TIMEOUT_SEC (or ``max_timeout_sec`` if
+    smaller), cut to the time left on the request deadline. Raises
+    ``deadline.DeadlineExceeded`` when too little time is left to start.
+    """
     # Fast path for strict echo-style prompts used in smoke tests and control checks.
     match = re.fullmatch(
         r"\s*Say\s+['\"](.+?)['\"]\s+and\s+nothing\s+else\.?\s*",
@@ -29,13 +38,14 @@ def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
 
     provider = LLM_PROVIDER.strip().lower()
     logger.debug("llm_call_started provider=%s temperature=%.2f", provider, temperature)
+    cap = LLM_TIMEOUT_SEC if max_timeout_sec is None else min(LLM_TIMEOUT_SEC, max_timeout_sec)
 
     if provider == "groq":
-        return _call_groq(prompt, system, temperature)
+        return _call_groq(prompt, system, temperature, cap)
     elif provider == "ollama":
-        return _call_ollama(prompt, system, temperature)
+        return _call_ollama(prompt, system, temperature, cap)
     elif provider in {"hf", "huggingface"}:
-        return _call_hf_with_fallback(prompt, system, temperature)
+        return _call_hf_with_fallback(prompt, system, temperature, cap)
     else:
         raise ValueError(
             f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. "
@@ -43,10 +53,12 @@ def call(prompt: str, system: str = "", temperature: float = 0.0) -> str:
         )
 
 
-def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
+def _call_hf_with_fallback(prompt: str, system: str, temperature: float, cap: float) -> str:
     """Call Hugging Face first, with automatic fallback on quota exhaustion."""
     try:
-        return _call_hf(prompt, system, temperature)
+        return _call_hf(prompt, system, temperature, cap)
+    except deadline.DeadlineExceeded:
+        raise
     except Exception as exc:
         msg = str(exc)
         is_quota_error = (
@@ -62,14 +74,18 @@ def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
         # Prefer Groq when available because it's remote and requires no local model.
         if GROQ_API_KEY:
             try:
-                return _call_groq(prompt, system, temperature)
+                return _call_groq(prompt, system, temperature, cap)
+            except deadline.DeadlineExceeded:
+                raise
             except Exception as groq_exc:
                 fallback_errors.append(f"groq failed: {groq_exc}")
                 logger.warning("hf_fallback_groq_failed error=%s", str(groq_exc))
 
         # Final fallback: local Ollama if running.
         try:
-            return _call_ollama(prompt, system, temperature)
+            return _call_ollama(prompt, system, temperature, cap)
+        except deadline.DeadlineExceeded:
+            raise
         except Exception as ollama_exc:
             fallback_errors.append(f"ollama failed: {ollama_exc}")
             logger.warning("hf_fallback_ollama_failed error=%s", str(ollama_exc))
@@ -80,7 +96,7 @@ def _call_hf_with_fallback(prompt: str, system: str, temperature: float) -> str:
         raise ValueError(f"{msg} | Automatic fallback failed ({details}).") from exc
 
 
-def _call_groq(prompt: str, system: str, temperature: float) -> str:
+def _call_groq(prompt: str, system: str, temperature: float, cap: float) -> str:
     import requests
 
     if not GROQ_API_KEY:
@@ -108,7 +124,7 @@ def _call_groq(prompt: str, system: str, temperature: float) -> str:
             "https://api.groq.com/openai/v1/chat/completions",
             json=payload,
             headers=headers,
-            timeout=120,
+            timeout=deadline.budget(cap),
         )
 
         if response.status_code != 429:
@@ -128,12 +144,12 @@ def _call_groq(prompt: str, system: str, temperature: float) -> str:
             attempt + 1,
             delay,
         )
-        time.sleep(delay)
+        deadline.sleep(delay)
 
     raise ValueError("Groq request failed after retries")
 
 
-def _call_ollama(prompt: str, system: str, temperature: float) -> str:
+def _call_ollama(prompt: str, system: str, temperature: float, cap: float) -> str:
     import requests
 
     payload = {
@@ -145,7 +161,7 @@ def _call_ollama(prompt: str, system: str, temperature: float) -> str:
     }
     for attempt in range(3):
         response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120
+            f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=deadline.budget(cap)
         )
 
         # Retry transient server-side failures (e.g., model load hiccups).
@@ -158,12 +174,12 @@ def _call_ollama(prompt: str, system: str, temperature: float) -> str:
             attempt + 1,
             response.status_code,
         )
-        time.sleep(2 * (attempt + 1))
+        deadline.sleep(2 * (attempt + 1))
 
     raise ValueError("Ollama request failed after retries")
 
 
-def _call_hf(prompt: str, system: str, temperature: float) -> str:
+def _call_hf(prompt: str, system: str, temperature: float, cap: float) -> str:
     import requests
 
     if not HF_API_KEY:
@@ -187,7 +203,9 @@ def _call_hf(prompt: str, system: str, temperature: float) -> str:
         "Authorization": f"Bearer {HF_API_KEY}",
         "Content-Type": "application/json",
     }
-    response = requests.post(HF_BASE_URL, json=payload, headers=headers, timeout=120)
+    response = requests.post(
+        HF_BASE_URL, json=payload, headers=headers, timeout=deadline.budget(cap)
+    )
     try:
         response.raise_for_status()
     except requests.HTTPError as exc:

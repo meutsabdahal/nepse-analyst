@@ -1,6 +1,6 @@
 import re
 
-from nepse_analyst import llm, database
+from nepse_analyst import database, deadline, llm
 from nepse_analyst.prompts import build_sql_prompt
 from nepse_analyst.config import MAX_SQL_RETRIES
 
@@ -40,22 +40,15 @@ def generate_and_execute(question: str) -> dict:
     last_error = None
     last_sql = ""
 
+    attempts = 0
     for attempt in range(1, MAX_SQL_RETRIES + 1):
-
-        # On retry, append the previous error to the prompt so the LLM
-        # can self-correct. This is the key technique for retry logic.
-        if attempt > 1:
-            retry_prompt = (
-                f"{prompt}\n\n"
-                f"Your previous SQL attempt failed with this error:\n"
-                f"{last_error}\n\n"
-                f"The table and column names available are exactly as listed in the schema above. "
-                f"Fix the SQL and return only the corrected query. No explanation.\n"
-                f"SQL:"
-            )
-            raw_sql = llm.call(retry_prompt, temperature=0.0)
-        else:
-            raw_sql = llm.call(prompt, temperature=0.0)
+        try:
+            raw_sql = _generate(prompt, attempt, last_error)
+        except deadline.DeadlineExceeded as exc:
+            # Out of time: stop retrying so the caller's fallbacks can still answer.
+            last_error = f"{last_error} | {exc}" if last_error else str(exc)
+            break
+        attempts = attempt
 
         sql = clean_sql(raw_sql)
         last_sql = sql
@@ -76,7 +69,7 @@ def generate_and_execute(question: str) -> dict:
 
         last_error = result["error"]
 
-    # All retries exhausted
+    # All retries exhausted, or the request ran out of time
     return {
         "success": False,
         "question": question,
@@ -85,6 +78,22 @@ def generate_and_execute(question: str) -> dict:
         "columns": [],
         "row_count": 0,
         "truncated": False,
-        "attempts": MAX_SQL_RETRIES,
+        "attempts": attempts,
         "error": last_error,
     }
+
+
+def _generate(prompt: str, attempt: int, last_error: str | None) -> str:
+    """Ask the LLM for SQL. On a retry, the previous error is appended so the
+    model can self-correct."""
+    if attempt == 1:
+        return llm.call(prompt, temperature=0.0)
+    retry_prompt = (
+        f"{prompt}\n\n"
+        f"Your previous SQL attempt failed with this error:\n"
+        f"{last_error}\n\n"
+        f"The table and column names available are exactly as listed in the schema above. "
+        f"Fix the SQL and return only the corrected query. No explanation.\n"
+        f"SQL:"
+    )
+    return llm.call(retry_prompt, temperature=0.0)

@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 
+from nepse_analyst import deadline
 from nepse_analyst.config import DB_PATH, DB_BUSY_TIMEOUT_MS, SQL_MAX_ROWS, SQL_TIMEOUT_MS
 
 # SQLite calls the progress handler every this many VM instructions.
@@ -230,7 +231,8 @@ def execute_query(
     The time limit covers executing the query and fetching its rows; a query
     that runs past it is aborted with an error. At most ``max_rows`` rows are
     fetched, and ``truncated`` says whether more existed. ``None`` or 0
-    disables a limit (for trusted SQL such as benchmark references).
+    disables a limit (for trusted SQL such as benchmark references). Inside a
+    request, the time limit is also cut to the time left on its deadline.
     """
     conn = None
     timed_out = False
@@ -239,13 +241,19 @@ def execute_query(
         if not is_valid:
             return _failure(validation_error)
 
+        left = deadline.remaining()
+        if left is not None:
+            if left <= 0:
+                return _failure("Request time limit reached before the query could run.")
+            timeout_ms = min(timeout_ms, left * 1000) if timeout_ms else left * 1000
+
         conn = get_connection(read_only=True)
         if timeout_ms:
-            deadline = time.monotonic() + timeout_ms / 1000.0
+            stop_at = time.monotonic() + timeout_ms / 1000.0
 
             def _past_deadline() -> int:
                 nonlocal timed_out
-                timed_out = time.monotonic() > deadline
+                timed_out = time.monotonic() > stop_at
                 return int(timed_out)  # non-zero aborts the statement
 
             conn.set_progress_handler(_past_deadline, _PROGRESS_INTERVAL)
@@ -270,7 +278,7 @@ def execute_query(
     except Exception as e:
         if timed_out:
             return _failure(
-                f"Query stopped after the {timeout_ms / 1000:g} s time limit. "
+                f"Query stopped after the {timeout_ms / 1000:.1f} s time limit. "
                 "Narrow it with WHERE filters, avoid unbounded joins, or add a LIMIT."
             )
         return _failure(str(e))

@@ -1,5 +1,6 @@
 import re
 from nepse_analyst import ambiguous_symbols, llm
+from nepse_analyst.config import ROUTER_TIMEOUT_SEC
 from nepse_analyst.guardrails import get_guardrail_type
 from nepse_analyst.language_detector import detect_language
 from nepse_analyst.database import get_connection
@@ -208,13 +209,13 @@ def classify(query: str) -> dict:
     # LLM classification
     prompt = build_router_prompt(query, language, entities)
     try:
-        raw = llm.call(prompt, temperature=0.0)
+        raw = llm.call(prompt, temperature=0.0, max_timeout_sec=ROUTER_TIMEOUT_SEC)
         route = raw.strip().upper().split()[0]  # take first word, uppercase
         if route not in _VALID_ROUTES:
             route = "SQL"  # safe fallback — SQL is the most common case
         confidence = "high"
     except Exception:
-        # LLM call failed — apply heuristic fallback routing
+        # LLM call failed or timed out — apply heuristic fallback routing
         route = _heuristic_route(query, language, entities)
         confidence = "low"
 

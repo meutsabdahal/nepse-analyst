@@ -45,6 +45,12 @@ RAG_SYMBOL_BOOST = float(os.getenv("RAG_SYMBOL_BOOST", "0.1"))
 RAG_SECTOR_BOOST = float(os.getenv("RAG_SECTOR_BOOST", "0.05"))
 NEWS_STALE_DAYS = _env_int("NEWS_STALE_DAYS", 30)
 MAX_SQL_RETRIES = _env_int("MAX_SQL_RETRIES", 3)
+# Time budget for one question, shared by all of its LLM calls and SQL queries;
+# 0 disables it. Each LLM call is also capped at LLM_TIMEOUT_SEC, and the router's
+# one-word classification at ROUTER_TIMEOUT_SEC so it cannot use up the budget.
+REQUEST_TIMEOUT_SEC = _env_int("REQUEST_TIMEOUT_SEC", 60)
+LLM_TIMEOUT_SEC = _env_int("LLM_TIMEOUT_SEC", 120)
+ROUTER_TIMEOUT_SEC = _env_int("ROUTER_TIMEOUT_SEC", 15)
 NEWS_COLLECTION = os.getenv("NEWS_COLLECTION", "nepse_news")
 CORPUS_STATS_TTL_SEC = _env_int("CORPUS_STATS_TTL_SEC", 60)
 DB_BUSY_TIMEOUT_MS = _env_int("DB_BUSY_TIMEOUT_MS", 5000)
