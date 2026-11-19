@@ -173,6 +173,30 @@ def _col_index(header: list[str], *needles: str) -> int | None:
     return None
 
 
+_ROW_NUMBER = re.compile(r"^\d+\.?$")
+
+
+def _panel_row(cells: list[str]) -> tuple[str | None, float | None]:
+    """(fiscal year, value) from a dividend/bonus history panel row.
+
+    The cells are [row number, value, "(FY: 082-083)"]; the panel's header labels
+    ("#, Fiscal Year, Value") do not match them, so cells are read by content.
+    The row number ("1.") must be skipped: reading it as the value stored 1, 2,
+    3... as every company's dividend history.
+    """
+    fy = None
+    value = None
+    for cell in cells:
+        if _ROW_NUMBER.match(cell):
+            continue
+        cell_fy = extract_fiscal_year_from_text(cell)
+        if cell_fy:
+            fy = fy or cell_fy
+        elif value is None and re.search(r"\d", cell):
+            value = extract_float(cell)
+    return fy, value
+
+
 def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
     by_fy: dict[str, dict[str, Any]] = {}
 
@@ -203,18 +227,21 @@ def parse_dividends(soup: BeautifulSoup, symbol: str) -> list[Dividend]:
             panel = acc.find("tr", id=panel_id)
             if not panel:
                 continue
+            # Rows are newest first, and a year is often listed twice, the second
+            # time as 0.00%. A zero never replaces a value already read for that
+            # year; between two values, the first (newest) wins.
+            panel_values: dict[str, float] = {}
             for r in panel.find_all("tr"):
                 vals = [normalize_ws(c.get_text(" ", strip=True)) for c in r.find_all(["th", "td"])]
                 if not vals or any(v.lower() in {"#", "value", "fiscal year"} for v in vals):
                     continue
-                fy = None
-                num = None
-                for v in vals:
-                    fy = fy or extract_fiscal_year_from_text(v)
-                    if num is None and ("%" in v or re.search(r"\d", v)):
-                        num = extract_float(v)
-                if fy and num is not None:
-                    upsert(fy, field, num)
+                fy, num = _panel_row(vals)
+                if not fy or num is None:
+                    continue
+                if fy not in panel_values or (panel_values[fy] == 0 and num != 0):
+                    panel_values[fy] = num
+            for fy, num in panel_values.items():
+                upsert(fy, field, num)
 
     # 3) Generic dividend-like tables with FY/value columns.
     for table in soup.find_all("table"):

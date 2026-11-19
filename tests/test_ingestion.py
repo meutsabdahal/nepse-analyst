@@ -441,6 +441,50 @@ class MerolaganiParserTests(unittest.TestCase):
     </table>
     """
 
+    # The shape of a real CompanyDetail.aspx page: the panels' header labels do
+    # not match their cells, which are [row number, value, (FY: ...)].
+    PANELS_HTML = """
+    <table id="accordion">
+      <tr><th>% Dividend</th><td>10.80 (FY:082-083)</td></tr>
+      <tr><th>% Bonus</th><td>5.00 (FY:082-083)</td></tr>
+      <tr id="dividend-panel"><td><table>
+        <tr><th>#</th><th>Fiscal Year</th><th>Value</th></tr>
+        <tr><td>1.</td><td>10.80%</td><td>(FY: 082-083)</td></tr>
+        <tr><td>2.</td><td>12.50%</td><td>(FY: 081-082)</td></tr>
+        <tr><td>3.</td><td>0.00%</td><td>(FY: 080-081)</td></tr>
+        <tr><td>4.</td><td>11.00%</td><td>(FY: 079-080)</td></tr>
+        <tr><td>5.</td><td>0.00%</td><td>(FY: 079-080)</td></tr>
+        <tr><td>6.</td><td>0.00%</td><td>(FY: 078-079)</td></tr>
+        <tr><td>7.</td><td>4.40%</td><td>(FY: 078-079)</td></tr>
+        <tr><td>8.</td><td>3.00%</td><td>(FY: 077-078)</td></tr>
+        <tr><td>9.</td><td>2.00%</td><td>(FY: 077-078)</td></tr>
+        <tr><td>12.</td><td>7.37%</td><td>(FY: 071-072)</td></tr>
+      </table></td></tr>
+      <tr id="bonus-panel"><td><table>
+        <tr><th>#</th><th>Value</th><th>Fiscal Year</th></tr>
+        <tr><td>1.</td><td>5.00%</td><td>(FY: 082-083)</td></tr>
+        <tr><td>2.</td><td>10.00%</td><td>(FY: 076-077)</td></tr>
+      </table></td></tr>
+    </table>
+    """
+
+    def test_history_panels_use_the_value_not_the_row_number(self):
+        soup = BeautifulSoup(self.PANELS_HTML, "html.parser")
+        by_fy = {d.fiscal_year: (d.cash_dividend, d.bonus_shares) for d in parse_dividends(soup, "NABIL")}
+        self.assertEqual(by_fy["2082/83"], (10.8, 5.0))
+        self.assertEqual(by_fy["2081/82"], (12.5, None))
+        self.assertEqual(by_fy["2080/81"], (0.0, None))  # no dividend that year
+        self.assertEqual(by_fy["2076/77"], (None, 10.0))
+        self.assertEqual(by_fy["2071/72"], (7.37, None))  # row "12." is not read as a value
+
+    def test_repeated_fiscal_years_keep_the_real_value(self):
+        # Panels often list a year twice, the second time as 0.00%.
+        soup = BeautifulSoup(self.PANELS_HTML, "html.parser")
+        by_fy = {d.fiscal_year: d.cash_dividend for d in parse_dividends(soup, "NABIL")}
+        self.assertEqual(by_fy["2079/80"], 11.0)  # 11.00% then 0.00%
+        self.assertEqual(by_fy["2078/79"], 4.4)  # 0.00% then 4.40%
+        self.assertEqual(by_fy["2077/78"], 3.0)  # two values: the first (newest listed) wins
+
     def test_fiscal_year_normalization(self):
         self.assertEqual(normalize_fiscal_year("FY:082-083"), "2082/83")
         self.assertEqual(normalize_fiscal_year("2079/2080"), "2079/80")
