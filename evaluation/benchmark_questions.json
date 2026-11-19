@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-11-18",
+    "generated_at": "2026-11-19",
     "source_db": "data/processed/nepse.db",
     "sql_benchmark": [
         {
@@ -11,7 +11,7 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 1,
                 "rows": [
                     {
@@ -37,7 +37,7 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 23,
                 "rows": [
                     {
@@ -126,18 +126,42 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
-                "row_count": 0,
-                "rows": [],
-                "status": "data_unavailable",
-                "reason": "companies.market_cap is NULL for all symbols in current snapshot"
+                "snapshot_at": "2026-11-19",
+                "row_count": 5,
+                "rows": [
+                    {
+                        "symbol": "NABIL",
+                        "market_cap": 148542921216.0,
+                        "pe_ratio": 16.2
+                    },
+                    {
+                        "symbol": "GBIME",
+                        "market_cap": 95115247742.29999,
+                        "pe_ratio": 11.31
+                    },
+                    {
+                        "symbol": "EBL",
+                        "market_cap": 76277413785.0,
+                        "pe_ratio": 20.53
+                    },
+                    {
+                        "symbol": "NIMB",
+                        "market_cap": 70339034088.9,
+                        "pe_ratio": 14.8
+                    },
+                    {
+                        "symbol": "SCB",
+                        "market_cap": 63196200037.8,
+                        "pe_ratio": 25.24
+                    }
+                ]
             },
             "ground_truth_sql": "SELECT c.symbol, c.market_cap, f.pe_ratio FROM companies c JOIN fundamentals f ON f.symbol = c.symbol WHERE c.sector = 'Commercial Banks' AND f.fiscal_year = (SELECT fiscal_year FROM fundamentals ORDER BY CAST(SUBSTR(fiscal_year,1,4) AS INT) DESC LIMIT 1) AND c.market_cap IS NOT NULL ORDER BY c.market_cap DESC LIMIT 5",
             "match_columns": [
                 "symbol",
                 "pe_ratio"
             ],
-            "notes": "Benchmark intent is valid; current DB cannot answer due to missing market cap values. companies.market_cap is NULL for all symbols in current snapshot."
+            "notes": "companies.market_cap is listed_shares x latest close, computed at build time. Before 2026-11-19 it was NULL for every company (share counts failed to parse), so this reference was empty."
         },
         {
             "id": "Q4",
@@ -148,7 +172,7 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 1,
                 "rows": [
                     {
@@ -172,7 +196,7 @@
             ],
             "difficulty": "hard",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 0,
                 "rows": [],
                 "status": "data_unavailable"
@@ -191,7 +215,7 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 0,
                 "rows": [],
                 "status": "data_unavailable",
@@ -212,7 +236,7 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 2,
                 "rows": [
                     {
@@ -241,7 +265,7 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 1,
                 "rows": [
                     {
@@ -266,7 +290,7 @@
             ],
             "difficulty": "easy",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 1,
                 "rows": [
                     {
@@ -291,7 +315,7 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 0,
                 "rows": [],
                 "status": "data_unavailable",
@@ -312,7 +336,7 @@
             ],
             "difficulty": "medium",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 2,
                 "rows": [
                     {
@@ -344,7 +368,7 @@
             ],
             "difficulty": "hard",
             "ground_truth": {
-                "snapshot_at": "2026-11-18",
+                "snapshot_at": "2026-11-19",
                 "row_count": 12,
                 "rows": [
                     {

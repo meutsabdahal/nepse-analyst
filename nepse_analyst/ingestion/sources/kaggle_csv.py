@@ -43,8 +43,14 @@ SECTOR_MAP = {
 }
 
 
-def _nan_to_none(value: object) -> float | None:
-    return None if pd.isna(value) else float(value)
+def _positive_or_none(value: object) -> float | None:
+    # The CSV writes 0 where a figure is unknown (e.g. new or capital-market listings).
+    return None if pd.isna(value) or value <= 0 else float(value)
+
+
+def _count_or_none(value: object) -> int | None:
+    number = _positive_or_none(value)
+    return None if number is None else int(number)
 
 
 class KaggleCsvCompanySource:
@@ -57,7 +63,8 @@ class KaggleCsvCompanySource:
         if not self.csv_path.exists():
             raise FileNotFoundError(f"Company CSV not found at {self.csv_path}")
 
-        df = pd.read_csv(self.csv_path)
+        # Share counts and paid-up totals use thousands separators ("134,516,741").
+        df = pd.read_csv(self.csv_path, thousands=",")
         df = df.rename(columns={c: c.strip().lower().replace(" ", "_") for c in df.columns})
         missing = [c for c in _COLUMN_MAPPING if c not in df.columns]
         if missing:
@@ -68,9 +75,8 @@ class KaggleCsvCompanySource:
             df[col] = df[col].astype(str).str.strip()
         df["symbol"] = df["symbol"].str.upper()
         df["sector"] = df["sector"].replace(SECTOR_MAP)
-        df["listed_shares"] = pd.to_numeric(df["listed_shares"], errors="coerce").fillna(0).astype(int)
-        df["paid_up_value"] = pd.to_numeric(df["paid_up_value"], errors="coerce")
-        df["total_paid_up"] = pd.to_numeric(df["total_paid_up"], errors="coerce")
+        for col in ("listed_shares", "paid_up_value", "total_paid_up"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.drop_duplicates(subset=["symbol"], keep="first")
 
         return [
@@ -78,9 +84,9 @@ class KaggleCsvCompanySource:
                 symbol=row.symbol,
                 name=row.name,
                 sector=row.sector,
-                listed_shares=int(row.listed_shares),
-                paid_up_value=_nan_to_none(row.paid_up_value),
-                total_paid_up=_nan_to_none(row.total_paid_up),
+                listed_shares=_count_or_none(row.listed_shares),
+                paid_up_value=_positive_or_none(row.paid_up_value),
+                total_paid_up=_positive_or_none(row.total_paid_up),
             )
             for row in df.itertuples(index=False)
         ]

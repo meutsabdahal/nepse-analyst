@@ -429,9 +429,22 @@ class Loader:
             )
             conn.commit()
             sectors = conn.execute("SELECT COUNT(DISTINCT sector) FROM companies").fetchone()[0]
+            # Reloading companies drops market_cap; recompute it from any prices already loaded.
+            with_market_cap = self._update_market_caps(conn)
         finally:
             conn.close()
-        return {"companies": len(companies), "sectors": sectors}
+        return {"companies": len(companies), "sectors": sectors, "with_market_cap": with_market_cap}
+
+    @staticmethod
+    def _update_market_caps(conn: sqlite3.Connection) -> int:
+        """Set companies.market_cap = listed_shares x latest close; return how many are set."""
+        conn.execute(
+            "UPDATE companies SET market_cap = listed_shares * ("
+            "SELECT p.close_price FROM price_history p WHERE p.symbol = companies.symbol "
+            "ORDER BY p.trade_date DESC LIMIT 1)"
+        )
+        conn.commit()
+        return conn.execute("SELECT COUNT(*) FROM companies WHERE market_cap IS NOT NULL").fetchone()[0]
 
     def _company_rows(self, conn: sqlite3.Connection, where: str = "", params: Sequence = ()) -> list[tuple]:
         return conn.execute(
@@ -494,6 +507,7 @@ class Loader:
                 conn.executemany(insert_sql, pending)
                 conn.commit()
                 inserted += len(pending)
+            with_market_cap = self._update_market_caps(conn)
         finally:
             conn.close()
 
@@ -504,6 +518,7 @@ class Loader:
             "rows": inserted,
             "failed_symbols": len(failed),
             "aborted": aborted,
+            "with_market_cap": with_market_cap,
         }
         served_by = getattr(source, "served_by", None)
         if served_by:

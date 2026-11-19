@@ -25,6 +25,7 @@ TABLES: tuple[str, ...] = (
 # Units and formats that the data alone cannot show.
 COLUMN_NOTES: dict[str, dict[str, str]] = {
     "companies": {
+        "market_cap": "NPR, listed_shares x latest close_price",
         "is_active": "1 = currently listed",
     },
     "price_history": {

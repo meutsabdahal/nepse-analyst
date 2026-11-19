@@ -6,6 +6,8 @@ A natural language research assistant for Nepal's retail investors.
 
 Latest benchmark run: 2026-11-18. Pipeline LLM: local Ollama `llama3.2:3b`. Data: database built 2026-11-17 16:23 (includes the 2025–26 index history from `b110eb1`).
 
+This run predates market cap being populated: Q3's reference was empty then and now has 5 rows (see Known Data Constraints). The results below have not been re-measured since.
+
 Pipeline mode now evaluates what a user gets: `pipeline.run()` on each SQL question (routing, keyword-triggered rule answers, generated SQL, written answer), plus the SQL generator alone for comparison.
 
 | Metric | Pipeline mode | Ground-truth mode |
@@ -239,7 +241,7 @@ Troubleshooting (TestClient mismatch):
 ## Known Data Constraints
 
 From the 2026-11-17 database (reference results are snapshotted in `evaluation/benchmark_questions.json`; refresh with `uv run python scripts/evaluate_benchmark.py --refresh-snapshot`):
-- Q3 has an empty reference: `companies.market_cap` is NULL for every row.
+- `companies.market_cap` is computed during the build as `listed_shares` × the symbol's latest close (recomputed by both the `companies` and `prices` steps). 251 of 520 companies have one; the rest lack a share count in the bundled Kaggle CSV or have no price history. Share counts come from that CSV snapshot, so bonus and right issues since then are not reflected. Until 2026-11-19 the CSV's thousands separators were parsed as missing, so `listed_shares` was 0 and `market_cap` NULL for every company, and Q3 had an empty reference.
 - Q6 has an empty reference: `ipos.oversubscription_rate` is NULL for every row.
 - Q10 has an empty reference: `fundamentals.roe` is NULL for every row.
 - Q5 has an empty reference: no company has EPS for three or more fiscal years. Its reference SQL was rewritten to check EPS rising across three consecutive fiscal years; previously it listed every EPS row. Q2's reference SQL had the same problem (raw dividend rows, streak check left to code that did not exist) and now returns the 23 hydropower companies with a 3+ year cash-dividend run.
