@@ -614,52 +614,118 @@ function threadLang(thread) {
     return thread && thread.messages.length > 0 ? messageLang(thread.messages, 0) : null;
 }
 
-function renderMessages() {
-    const thread = getActiveThread();
-    el.messageFeed.innerHTML = "";
+// Pixels from the bottom that still count as "at the bottom", so a reader who
+// has scrolled up is not pulled down when an answer arrives.
+const STICK_TO_BOTTOM_PX = 48;
 
+function buildMessageNode(messages, index) {
+    const message = messages[index];
+    const clone = el.messageTemplate.content.firstElementChild.cloneNode(true);
+    clone.classList.add(message.role === "user" ? "user" : "assistant");
+    clone.dataset.messageId = message.id;
+
+    const role = clone.querySelector(".message-role");
+    const body = clone.querySelector(".message-body");
+    const meta = clone.querySelector(".message-meta");
+
+    role.textContent = titleCase(message.role);
+    if (message.role === "assistant") {
+        const passages = message.meta && message.meta.sources ? message.meta.sources.passages : null;
+        renderAnswerText(body, message.content, message.id, passages);
+        renderSourceMeta(meta, message.meta, message.id);
+    } else {
+        body.textContent = message.content;
+    }
+    setLang(body, messageLang(messages, index));
+    return clone;
+}
+
+function buildEmptyState() {
+    const empty = document.createElement("article");
+    empty.className = "message assistant";
+    empty.dataset.emptyState = "true";
+
+    const role = document.createElement("p");
+    role.className = "message-role";
+    role.textContent = "Assistant";
+
+    const body = document.createElement("div");
+    body.className = "message-body";
+    const intro = document.createElement("p");
+    intro.textContent = "Ask about NEPSE companies, sectors, dividends and prices.";
+    body.append(intro);
+    renderCoverage(body, state.coverage);
+
+    empty.append(role, body);
+    return empty;
+}
+
+// Draws a thread from scratch, for opening a chat. The feed element is
+// replaced rather than emptied: the feed is a live region, and a screen reader
+// does not read the content a live region starts with, so opening a chat does
+// not read the whole conversation out. Messages drawn here skip the entry
+// animation; only new ones rise in.
+function rebuildFeed(thread) {
+    const feed = el.messageFeed.cloneNode(false);
+    feed.dataset.threadId = thread ? thread.id : "";
     if (!thread || thread.messages.length === 0) {
-        const empty = document.createElement("article");
-        empty.className = "message assistant";
+        feed.append(buildEmptyState());
+    } else {
+        thread.messages.forEach((_, index) => {
+            const node = buildMessageNode(thread.messages, index);
+            node.classList.add("settled");
+            feed.append(node);
+        });
+    }
+    el.messageFeed.replaceWith(feed);
+    el.messageFeed = feed;
+    feed.scrollTop = feed.scrollHeight;
+}
 
-        const role = document.createElement("p");
-        role.className = "message-role";
-        role.textContent = "Assistant";
-
-        const body = document.createElement("div");
-        body.className = "message-body";
-        const intro = document.createElement("p");
-        intro.textContent = "Ask about NEPSE companies, sectors, dividends and prices.";
-        body.append(intro);
-        renderCoverage(body, state.coverage);
-
-        empty.append(role, body);
-        el.messageFeed.append(empty);
-        return;
+// Brings the open chat's feed up to date without redrawing it: messages that
+// are gone (a retried exchange) are removed and new ones appended, so open
+// Sources panels stay open, nothing replays its animation, and the live region
+// announces only what was added. Scrolls to the bottom for the reader's own
+// question, and for an answer only when they were already at the bottom.
+function updateFeed(thread) {
+    const feed = el.messageFeed;
+    const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight <= STICK_TO_BOTTOM_PX;
+    const ids = new Set(thread.messages.map((m) => m.id));
+    const rendered = new Map();
+    for (const node of [...feed.children]) {
+        const id = node.dataset.messageId;
+        if (id && ids.has(id)) {
+            rendered.set(id, node);
+        } else {
+            node.remove();
+        }
     }
 
+    let askedQuestion = false;
     thread.messages.forEach((message, index) => {
-        const clone = el.messageTemplate.content.firstElementChild.cloneNode(true);
-        clone.classList.add(message.role === "user" ? "user" : "assistant");
-
-        const role = clone.querySelector(".message-role");
-        const body = clone.querySelector(".message-body");
-        const meta = clone.querySelector(".message-meta");
-
-        role.textContent = titleCase(message.role);
-        if (message.role === "assistant") {
-            const passages = message.meta && message.meta.sources ? message.meta.sources.passages : null;
-            renderAnswerText(body, message.content, message.id, passages);
-            renderSourceMeta(meta, message.meta, message.id);
-        } else {
-            body.textContent = message.content;
+        const node = rendered.get(message.id);
+        if (node) {
+            // A question's language is known once its answer arrives.
+            setLang(node.querySelector(".message-body"), messageLang(thread.messages, index));
+            return;
         }
-        setLang(body, messageLang(thread.messages, index));
-
-        el.messageFeed.append(clone);
+        feed.append(buildMessageNode(thread.messages, index));
+        askedQuestion = askedQuestion || message.role === "user";
     });
 
-    el.messageFeed.scrollTop = el.messageFeed.scrollHeight;
+    if (askedQuestion || atBottom) {
+        feed.scrollTop = feed.scrollHeight;
+    }
+}
+
+function renderMessages() {
+    const thread = getActiveThread();
+    const sameThread = thread && el.messageFeed.dataset.threadId === thread.id;
+    if (sameThread && thread.messages.length > 0) {
+        updateFeed(thread);
+    } else {
+        rebuildFeed(thread);
+    }
 }
 
 // What each dataset covers, with dates, so the first screen promises no more
@@ -835,8 +901,10 @@ async function sendMessage(message) {
     const requestThreadId = thread.id;
 
     appendMessageToThread(requestThreadId, "user", text);
-    render();
+    // Loading first: the typing indicator shortens the feed, and the scroll to
+    // the new question has to account for it.
     toggleLoading(true);
+    render();
 
     state.abortController = new AbortController();
     state.pendingThreadId = requestThreadId;

@@ -369,6 +369,11 @@ body {
     animation: rise-in 180ms ease;
 }
 
+/* Drawn when a chat is opened, not newly arrived. */
+.message.settled {
+    animation: none;
+}
+
 .message.user {
     align-self: flex-end;
     width: fit-content;
