@@ -1,20 +1,105 @@
+/* Every colour is a variable here. Dark is the base theme; the light values
+   below replace it when the system asks for light. Text colours meet 4.5:1
+   against every surface they sit on, scrollbars and borders that mark a
+   control 3:1. */
 :root {
+    color-scheme: dark;
+
+    /* Surfaces */
     --app-bg: #1f1d1a;
     --sidebar-bg: #171614;
     --sidebar-surface: #23211d;
-    --sidebar-border: #302c25;
-    --main-text: #e8e1d4;
-    --muted-text: #a49c8f;
-    --line: #3a352d;
     --assistant-card: #26231f;
-    --user-card: #322b23;
+    --control-bg: #25221d;
+    --control-hover: #312b23;
+    --control-hover-strong: #3a3228;
+    --panel-bg: #29241f;
+    --inset-bg: #1f1c18;
+
+    /* Lines */
+    --sidebar-border: #302c25;
+    --line: #3a352d;
+    --control-border: #4a4339;
+    --border-strong: #554c40;
+    --chip-strong-border: #6b5f4e;
+
+    /* Text */
+    --strong-text: #f5ede1;
+    --main-text: #e8e1d4;
+    --secondary-text: #b8ae9f;
+    --muted-text: #a49c8f;
+    --faint-text: #968c7e;
+
+    /* Accent (buttons, links, focus) */
     --button: #d08a67;
     --button-hover: #dda07f;
-    --button-text: #1f1711;
+    --on-accent: #ffffff;
+    --on-accent-ring: rgba(255, 255, 255, 0.45);
+    --focus-ring: #c99375;
+    --stop-bg: #57463c;
+    --stop-hover: #685245;
+
+    /* Status */
+    --warn-text: #f0c48a;
+    --warn-border: #9a6a33;
+    --warn-bg: #3a2c1c;
+    --stale-text: #f4b4a0;
+    --stale-border: #a5513a;
+    --stale-bg: #3d231b;
+
+    /* Effects */
     --shadow: 0 18px 38px rgba(0, 0, 0, 0.42);
-    /* At least 3:1 against the feed and sidebar backgrounds. */
+    --backdrop: rgba(0, 0, 0, 0.55);
     --scrollbar-thumb: #7a6e5e;
     --scrollbar-thumb-hover: #8a7d6a;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        color-scheme: light;
+
+        --app-bg: #faf8f4;
+        --sidebar-bg: #f2ede5;
+        --sidebar-surface: #e8e1d6;
+        --assistant-card: #f0ebe3;
+        --control-bg: #f6f2eb;
+        --control-hover: #e9e2d7;
+        --control-hover-strong: #ddd4c7;
+        --panel-bg: #f6f2eb;
+        --inset-bg: #fbf9f5;
+
+        --sidebar-border: #e2d9cc;
+        --line: #ddd3c5;
+        --control-border: #cfc4b4;
+        --border-strong: #ab9e8a;
+        --chip-strong-border: #a39580;
+
+        --strong-text: #17120d;
+        --main-text: #2a241d;
+        --secondary-text: #4f463b;
+        --muted-text: #6a6052;
+        --faint-text: #695e50;
+
+        --button: #9a4b26;
+        --button-hover: #87411f;
+        --on-accent: #ffffff;
+        --on-accent-ring: rgba(255, 255, 255, 0.6);
+        --focus-ring: #9a4b26;
+        --stop-bg: #6e5546;
+        --stop-hover: #5e4739;
+
+        --warn-text: #7d5210;
+        --warn-border: #d9a45a;
+        --warn-bg: #fbf0dc;
+        --stale-text: #9c3a1e;
+        --stale-border: #e0957c;
+        --stale-bg: #fbe9e2;
+
+        --shadow: 0 18px 38px rgba(60, 40, 20, 0.16);
+        --backdrop: rgba(30, 20, 10, 0.35);
+        --scrollbar-thumb: #8f8270;
+        --scrollbar-thumb-hover: #75695a;
+    }
 }
 
 * {
@@ -62,7 +147,7 @@ body {
 
 .left-rail {
     background: var(--sidebar-bg);
-    color: #efe6d8;
+    color: var(--main-text);
     border-right: 1px solid var(--sidebar-border);
     height: 100vh;
     height: 100dvh;
@@ -121,11 +206,11 @@ body {
 }
 
 .undo-button:hover {
-    background: #3a3228;
+    background: var(--control-hover-strong);
 }
 
 .undo-button:focus-visible {
-    outline: 2px solid #c99375;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
 }
 
@@ -140,7 +225,7 @@ body {
     font-size: 1.1rem;
     line-height: 1.2;
     font-weight: 600;
-    color: #f2e9db;
+    color: var(--strong-text);
 }
 
 .brand-kicker {
@@ -148,13 +233,13 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.64rem;
-    color: #9e9688;
+    color: var(--muted-text);
 }
 
 .new-chat-button {
     border: 0;
     background: var(--button);
-    color: #ffffff;
+    color: var(--on-accent);
     border-radius: 10px;
     padding: 0.56rem 0.66rem;
     font-size: 0.86rem;
@@ -175,7 +260,7 @@ body {
     width: 1rem;
     height: 1rem;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.45);
+    border: 1px solid var(--on-accent-ring);
     font-size: 0.78rem;
     line-height: 1;
     font-weight: 700;
@@ -207,16 +292,16 @@ body {
 
 .thread-label {
     margin: 0;
-    color: #8f8677;
+    color: var(--faint-text);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.62rem;
 }
 
 .clear-threads-button {
-    border: 1px solid #4a4339;
-    background: #25221d;
-    color: #d5cab9;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+    color: var(--main-text);
     border-radius: 999px;
     padding: 0.12rem 0.46rem;
     font-size: 0.66rem;
@@ -225,7 +310,7 @@ body {
 }
 
 .clear-threads-button:hover {
-    background: #312b23;
+    background: var(--control-hover);
 }
 
 .clear-threads-button:disabled {
@@ -269,7 +354,7 @@ body {
 
 .thread-item.active {
     background: var(--sidebar-surface);
-    border-color: #4f473d;
+    border-color: var(--border-strong);
 }
 
 .thread-title {
@@ -277,7 +362,7 @@ body {
     margin: 0;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #ece3d5;
+    color: var(--main-text);
     line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -288,7 +373,7 @@ body {
     display: block;
     margin: 0.12rem 0 0;
     font-size: 0.72rem;
-    color: #9b9385;
+    color: var(--muted-text);
 }
 
 .thread-delete-button {
@@ -297,7 +382,7 @@ body {
     right: 0.45rem;
     border: 0;
     background: transparent;
-    color: #9f9689;
+    color: var(--muted-text);
     border-radius: 8px;
     width: 1.2rem;
     height: 1.2rem;
@@ -318,13 +403,13 @@ body {
 }
 
 .thread-delete-button:hover {
-    background: #3a3228;
-    color: #f0e5d5;
+    background: var(--control-hover-strong);
+    color: var(--main-text);
     opacity: 1;
 }
 
 .rail-footer {
-    color: #8d8576;
+    color: var(--faint-text);
     font-size: 0.6rem;
 }
 
@@ -336,7 +421,7 @@ body {
 
 .chat-stage .rail-footer {
     text-align: center;
-    color: #9b9183;
+    color: var(--muted-text);
 }
 
 .rail-footer p {
@@ -380,7 +465,7 @@ body {
     font-family: "Fraunces", "Noto Sans Devanagari", serif;
     font-size: 0.96rem;
     font-weight: 500;
-    color: #e8dfd1;
+    color: var(--main-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -401,17 +486,17 @@ body {
 
 /* Matches .freshness-chip.stale under answers. */
 .data-status.stale {
-    color: #f4b4a0;
+    color: var(--stale-text);
 }
 
 .rail-toggle {
     display: none;
-    border: 1px solid #4a4339;
-    background: #26231f;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
     border-radius: 999px;
     padding: 0.3rem 0.62rem;
     font-size: 0.72rem;
-    color: #e7dece;
+    color: var(--main-text);
 }
 
 .message-feed {
@@ -496,7 +581,7 @@ body {
     margin: 0;
     white-space: pre-wrap;
     line-height: 1.5;
-    color: #e8dfd2;
+    color: var(--main-text);
 }
 
 .message-body > p,
@@ -525,7 +610,7 @@ body {
 }
 
 .message-body strong {
-    color: #f5ede1;
+    color: var(--strong-text);
     font-weight: 650;
 }
 
@@ -541,12 +626,12 @@ body {
 }
 
 .chip {
-    border: 1px solid #4b443a;
+    border: 1px solid var(--control-border);
     border-radius: 999px;
     padding: 0.12rem 0.42rem;
     font-size: 0.7rem;
-    color: #b8ae9f;
-    background: #2a2621;
+    color: var(--secondary-text);
+    background: var(--control-bg);
 }
 
 .retry-row {
@@ -571,7 +656,7 @@ body {
 
 .retry-button:hover:not(:disabled) {
     background: var(--button);
-    color: #ffffff;
+    color: var(--on-accent);
 }
 
 .retry-button:focus-visible {
@@ -586,15 +671,15 @@ body {
 
 .basis-chip {
     color: var(--main-text);
-    border-color: #6b5f4e;
+    border-color: var(--chip-strong-border);
     font-weight: 600;
 }
 
 /* The model alone, nothing checked: stands out from data-backed answers. */
 .basis-chip.basis-general_knowledge {
-    color: #f0c48a;
-    border-color: #9a6a33;
-    background: #3a2c1c;
+    color: var(--warn-text);
+    border-color: var(--warn-border);
+    background: var(--warn-bg);
 }
 
 .basis-chip.basis-declined {
@@ -604,9 +689,9 @@ body {
 
 /* Price or news data older than its threshold. */
 .freshness-chip.stale {
-    color: #f4b4a0;
-    border-color: #a5513a;
-    background: #3d231b;
+    color: var(--stale-text);
+    border-color: var(--stale-border);
+    background: var(--stale-bg);
 }
 
 .coverage-list li {
@@ -617,10 +702,10 @@ body {
 .coverage-stale {
     display: inline-block;
     padding: 0 0.4rem;
-    border: 1px solid #a5513a;
+    border: 1px solid var(--stale-border);
     border-radius: 999px;
-    background: #3d231b;
-    color: #f4b4a0;
+    background: var(--stale-bg);
+    color: var(--stale-text);
     font-size: 0.72rem;
     font-weight: 600;
     white-space: nowrap;
@@ -669,13 +754,6 @@ body {
     to { box-shadow: 0 0 0 2px transparent; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .passage-highlight {
-        animation: none;
-        box-shadow: 0 0 0 2px var(--button);
-    }
-}
-
 .fact-as-of {
     margin: 0.1rem 0 0;
     font-size: 0.66rem;
@@ -683,10 +761,10 @@ body {
 }
 
 .quick-facts {
-    border: 1px solid #4b4339;
+    border: 1px solid var(--control-border);
     border-radius: 12px;
     padding: 0.5rem;
-    background: #29241f;
+    background: var(--panel-bg);
     margin-bottom: 0.35rem;
 }
 
@@ -702,15 +780,15 @@ body {
 }
 
 .fact {
-    border: 1px solid #4e463b;
+    border: 1px solid var(--control-border);
     border-radius: 10px;
     padding: 0.3rem 0.38rem;
-    background: #1f1c18;
+    background: var(--inset-bg);
 }
 
 .fact-label {
     margin: 0;
-    color: #9c9385;
+    color: var(--muted-text);
     font-size: 0.66rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -729,15 +807,15 @@ body {
 .source-disclosure summary {
     cursor: pointer;
     font-size: 0.78rem;
-    color: #b5ab9c;
+    color: var(--secondary-text);
 }
 
 .sql-block {
-    border: 1px solid #4d453a;
+    border: 1px solid var(--control-border);
     border-radius: 10px;
     padding: 0.48rem;
     margin-top: 0.36rem;
-    background: #1e1b17;
+    background: var(--inset-bg);
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
     font-size: 0.72rem;
     white-space: pre-wrap;
@@ -753,18 +831,18 @@ body {
 
 .source-table th,
 .source-table td {
-    border: 1px solid #4b4338;
+    border: 1px solid var(--control-border);
     padding: 0.24rem 0.32rem;
     text-align: left;
     vertical-align: top;
 }
 
 .passage {
-    border: 1px solid #4d4439;
+    border: 1px solid var(--control-border);
     border-radius: 10px;
     padding: 0.42rem;
     margin-top: 0.36rem;
-    background: #1f1c18;
+    background: var(--inset-bg);
 }
 
 .passage-title {
@@ -776,7 +854,7 @@ body {
 .passage-meta {
     margin: 0.1rem 0;
     font-size: 0.7rem;
-    color: #948b7d;
+    color: var(--faint-text);
 }
 
 .passage-content {
@@ -790,14 +868,14 @@ body {
     align-items: center;
     gap: 0.34rem;
     font-size: 0.78rem;
-    color: #a59c8f;
+    color: var(--muted-text);
 }
 
 .typing-indicator > span {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #c18f72;
+    background: var(--focus-ring);
     animation: pulse 760ms infinite ease;
 }
 
@@ -815,7 +893,7 @@ body {
 
 .progress-elapsed {
     margin-left: 0.25rem;
-    color: #8a8174;
+    color: var(--faint-text);
     font-variant-numeric: tabular-nums;
 }
 
@@ -847,28 +925,28 @@ body {
     font-size: 0.68rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #8a8174;
+    color: var(--faint-text);
 }
 
 .example-chip {
-    border: 1px solid #4a4339;
+    border: 1px solid var(--control-border);
     border-radius: 999px;
-    background: #25221d;
-    color: #ddd2c2;
+    background: var(--control-bg);
+    color: var(--main-text);
     padding: 0.28rem 0.52rem;
     font-size: 0.74rem;
     cursor: pointer;
 }
 
 .example-chip:hover {
-    background: #312b23;
+    background: var(--control-hover);
 }
 
 .composer {
     position: relative;
-    border: 1px solid #4a4238;
+    border: 1px solid var(--control-border);
     border-radius: 20px;
-    background: #24211d;
+    background: var(--control-bg);
     display: flex;
     align-items: flex-end;
     gap: 0.5rem;
@@ -890,7 +968,7 @@ body {
     font-size: 0.96rem;
     font-family: inherit;
     background: transparent;
-    color: #e9dfd1;
+    color: var(--main-text);
     max-height: 220px;
     outline: none;
     padding: 0.2rem 0.3rem;
@@ -898,7 +976,7 @@ body {
 }
 
 .composer textarea::placeholder {
-    color: #9f9688;
+    color: var(--muted-text);
     /* On one line: a wrapped hint overflows the one-row box and shows a scrollbar. */
     white-space: nowrap;
     overflow: hidden;
@@ -906,13 +984,13 @@ body {
 }
 
 .composer:focus-within {
-    border-color: #5a5145;
+    border-color: var(--border-strong);
 }
 
 .composer button {
     border: 0;
     background: var(--button);
-    color: #ffffff;
+    color: var(--on-accent);
     border-radius: 12px;
     padding: 0.5rem 0.86rem;
     font-size: 0.88rem;
@@ -927,11 +1005,11 @@ body {
 }
 
 .composer .stop-button {
-    background: #57463c;
+    background: var(--stop-bg);
 }
 
 .composer .stop-button:hover:not(:disabled) {
-    background: #685245;
+    background: var(--stop-hover);
 }
 
 .new-chat-button:focus-visible,
@@ -941,7 +1019,7 @@ body {
 .example-chip:focus-visible,
 .composer button:focus-visible,
 .rail-toggle:focus-visible {
-    outline: 2px solid #c99375;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
 }
 
@@ -1004,7 +1082,7 @@ body {
         position: fixed;
         inset: 0;
         z-index: 15;
-        background: rgba(0, 0, 0, 0.55);
+        background: var(--backdrop);
         opacity: 0;
         pointer-events: none;
         transition: opacity 180ms ease;
@@ -1047,5 +1125,31 @@ body {
 
     .composer {
         border-radius: 16px;
+    }
+}
+
+/* Reduced motion: nothing moves. Messages appear without rising in, the
+   typing dots hold still (the stage text says what is happening), the chat
+   list drawer and its backdrop switch without sliding or fading, and a cited
+   source is outlined instead of flashing. Colour changes on hover stay, as
+   they do not move. Smooth scrolling to a source is turned off in app.js. */
+@media (prefers-reduced-motion: reduce) {
+    .message {
+        animation: none;
+    }
+
+    .typing-indicator > span {
+        animation: none;
+        opacity: 0.8;
+    }
+
+    .left-rail,
+    .rail-backdrop {
+        transition: none;
+    }
+
+    .passage-highlight {
+        animation: none;
+        box-shadow: 0 0 0 2px var(--button);
     }
 }
