@@ -18,6 +18,11 @@
     box-sizing: border-box;
 }
 
+/* Form controls do not inherit the page font by default. */
+button {
+    font-family: inherit;
+}
+
 html,
 body {
     margin: 0;
@@ -26,7 +31,8 @@ body {
 }
 
 body {
-    font-family: "Source Sans 3", sans-serif;
+    /* Source Sans 3 and Fraunces have no Devanagari; Nepali text falls through to Noto. */
+    font-family: "Source Sans 3", "Noto Sans Devanagari", sans-serif;
     color: var(--main-text);
     background: var(--app-bg);
 }
@@ -66,7 +72,7 @@ body {
 
 .brand-wrap h1 {
     margin: 0;
-    font-family: "Fraunces", serif;
+    font-family: "Fraunces", "Noto Sans Devanagari", serif;
     font-size: 1.1rem;
     line-height: 1.2;
     font-weight: 600;
@@ -301,7 +307,7 @@ body {
 
 .chat-header h2 {
     margin: 0;
-    font-family: "Fraunces", serif;
+    font-family: "Fraunces", "Noto Sans Devanagari", serif;
     font-size: 0.96rem;
     font-weight: 500;
     color: #e8dfd1;
