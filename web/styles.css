@@ -12,6 +12,9 @@
     --button-hover: #dda07f;
     --button-text: #1f1711;
     --shadow: 0 18px 38px rgba(0, 0, 0, 0.42);
+    /* At least 3:1 against the feed and sidebar backgrounds. */
+    --scrollbar-thumb: #7a6e5e;
+    --scrollbar-thumb-hover: #8a7d6a;
 }
 
 * {
@@ -131,13 +134,6 @@ body {
     overflow: auto;
     min-height: 0;
     padding-right: 0.2rem;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-.thread-wrap::-webkit-scrollbar {
-    width: 0;
-    height: 0;
 }
 
 .thread-head {
@@ -294,7 +290,9 @@ body {
     min-width: 0;
     max-width: 1080px;
     margin: 0 auto;
-    width: min(1080px, calc(100vw - 2.2rem));
+    /* Of its grid column, not the window: 100vw ignored the sidebar and pushed
+       the right edge (Send button, feed scrollbar) off screen. */
+    width: calc(100% - 2.2rem);
     height: 100vh;
     padding: 0.8rem 0 1rem;
     display: flex;
@@ -359,17 +357,45 @@ body {
     min-height: 300px;
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
     display: flex;
     flex-direction: column;
     gap: 0.58rem;
     padding: 0.2rem 0.1rem;
 }
 
+/* Thin scrollbars in the theme's colours, so it shows there is more to scroll
+   and where you are. The gutter is kept so content does not shift sideways
+   when a scrollbar appears. Chrome and Firefox use the standard properties;
+   Safari uses the ::-webkit-scrollbar rules (Chrome ignores them once the
+   standard ones are set). */
+.thread-wrap,
+.message-feed {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+    scrollbar-gutter: stable;
+}
+
+.thread-wrap::-webkit-scrollbar,
 .message-feed::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 8px;
+}
+
+.thread-wrap::-webkit-scrollbar-track,
+.message-feed::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.thread-wrap::-webkit-scrollbar-thumb,
+.message-feed::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.thread-wrap::-webkit-scrollbar-thumb:hover,
+.message-feed::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
 }
 
 .message {
@@ -811,6 +837,10 @@ body {
 
 .composer textarea::placeholder {
     color: #9f9688;
+    /* On one line: a wrapped hint overflows the one-row box and shows a scrollbar. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .composer:focus-within {
@@ -912,7 +942,7 @@ body {
     }
 
     .chat-stage {
-        width: min(1080px, calc(100vw - 1.1rem));
+        width: calc(100% - 1.1rem);
     }
 
     .message.user {
