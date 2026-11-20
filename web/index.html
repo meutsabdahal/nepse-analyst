@@ -33,9 +33,12 @@
             </div>
         </aside>
 
-        <main class="chat-stage">
+        <div id="railBackdrop" class="rail-backdrop" aria-hidden="true"></div>
+
+        <main class="chat-stage" id="chatStage">
             <header class="chat-header">
-                <button id="railToggleButton" class="rail-toggle" type="button" aria-label="Toggle chat list">
+                <button id="railToggleButton" class="rail-toggle" type="button" aria-expanded="false"
+                    aria-controls="leftRail">
                     Chats
                 </button>
                 <div class="header-title-wrap">

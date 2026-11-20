@@ -53,7 +53,10 @@ body {
     z-index: 1;
     display: grid;
     grid-template-columns: 272px minmax(0, 1fr);
+    /* dvh follows the phone browser's bars; 100vh assumes they are hidden and
+       put the message box under them. vh is the fallback. */
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -62,6 +65,7 @@ body {
     color: #efe6d8;
     border-right: 1px solid var(--sidebar-border);
     height: 100vh;
+    height: 100dvh;
     padding: 0.9rem 0.8rem 0.8rem;
     display: flex;
     flex-direction: column;
@@ -71,6 +75,11 @@ body {
 
 .brand-wrap {
     padding: 0.2rem 0.3rem;
+}
+
+/* Only used when the chat list is a drawer (narrow screens). */
+.rail-backdrop {
+    display: none;
 }
 
 .brand-wrap h1 {
@@ -294,6 +303,7 @@ body {
        the right edge (Send button, feed scrollbar) off screen. */
     width: calc(100% - 2.2rem);
     height: 100vh;
+    height: 100dvh;
     padding: 0.8rem 0 1rem;
     display: flex;
     flex-direction: column;
@@ -935,6 +945,22 @@ body {
 
     .left-rail.open {
         transform: translateX(0);
+    }
+
+    .rail-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 15;
+        background: rgba(0, 0, 0, 0.55);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+    }
+
+    .rail-backdrop.visible {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .rail-toggle {

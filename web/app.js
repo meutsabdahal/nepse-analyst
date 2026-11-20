@@ -16,6 +16,8 @@ const state = {
 const el = {
     rail: document.getElementById("leftRail"),
     railToggleButton: document.getElementById("railToggleButton"),
+    railBackdrop: document.getElementById("railBackdrop"),
+    chatStage: document.getElementById("chatStage"),
     newChatButton: document.getElementById("newChatButton"),
     clearThreadsButton: document.getElementById("clearThreadsButton"),
     threadList: document.getElementById("threadList"),
@@ -95,6 +97,29 @@ function setActiveThread(threadId) {
     state.activeThreadId = threadId;
     saveState();
     render();
+}
+
+// Below this width the chat list is a drawer over the chat (see styles.css).
+const narrowScreen = window.matchMedia("(max-width: 980px)");
+
+// Opens or closes the chat list drawer on narrow screens. While open, the chat
+// behind it is inert and a backdrop covers it; while closed, the off-screen
+// list is inert so Tab cannot reach it. On wide screens the list is always
+// shown and nothing is made inert.
+function setRailOpen(open, { restoreFocus = false } = {}) {
+    const drawer = narrowScreen.matches;
+    const isOpen = drawer && open;
+    el.rail.classList.toggle("open", isOpen);
+    el.railBackdrop.classList.toggle("visible", isOpen);
+    el.railToggleButton.setAttribute("aria-expanded", String(isOpen));
+    el.rail.inert = drawer && !isOpen;
+    el.chatStage.inert = isOpen;
+    if (isOpen) {
+        const current = el.rail.querySelector(".thread-open[aria-current]");
+        (current || el.newChatButton).focus();
+    } else if (drawer && restoreFocus) {
+        el.railToggleButton.focus();
+    }
 }
 
 function stopActiveRequest() {
@@ -243,7 +268,10 @@ function renderThreadList() {
         if (active) {
             open.setAttribute("aria-current", "true");
         }
-        open.addEventListener("click", () => setActiveThread(thread.id));
+        open.addEventListener("click", () => {
+            setActiveThread(thread.id);
+            setRailOpen(false, { restoreFocus: true });
+        });
 
         const title = document.createElement("span");
         title.className = "thread-title";
@@ -1087,6 +1115,7 @@ function bindEvents() {
     el.newChatButton.addEventListener("click", () => {
         createThread();
         render();
+        setRailOpen(false, { restoreFocus: true });
     });
 
     el.clearThreadsButton.addEventListener("click", () => {
@@ -1094,8 +1123,21 @@ function bindEvents() {
     });
 
     el.railToggleButton.addEventListener("click", () => {
-        el.rail.classList.toggle("open");
+        setRailOpen(!el.rail.classList.contains("open"));
     });
+
+    el.railBackdrop.addEventListener("click", () => {
+        setRailOpen(false, { restoreFocus: true });
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && el.rail.classList.contains("open")) {
+            setRailOpen(false, { restoreFocus: true });
+        }
+    });
+
+    // Crossing the breakpoint switches between drawer and sidebar.
+    narrowScreen.addEventListener("change", () => setRailOpen(false));
 
     el.stopButton.addEventListener("click", () => {
         stopActiveRequest();
@@ -1132,6 +1174,7 @@ async function init() {
     bindEvents();
     autoResizeComposer();
     render();
+    setRailOpen(false);
     await Promise.all([hydrateExamples(), hydrateCoverage()]);
 }
 
