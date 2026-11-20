@@ -76,6 +76,10 @@
         </main>
     </div>
 
+    <!-- Always present and empty when idle, so screen readers announce the notice
+         when it is added. Outside the app shell, so the drawer never makes it inert. -->
+    <div id="undoRegion" class="undo-region" role="status"></div>
+
     <template id="messageTemplate">
         <article class="message">
             <p class="message-role"></p>

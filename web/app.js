@@ -6,6 +6,7 @@ const state = {
     loading: false,
     abortController: null,
     pendingThreadId: null,
+    undo: null,
     progressTimer: null,
     progressStartedAt: 0,
     stopRequested: false,
@@ -17,6 +18,7 @@ const el = {
     rail: document.getElementById("leftRail"),
     railToggleButton: document.getElementById("railToggleButton"),
     railBackdrop: document.getElementById("railBackdrop"),
+    undoRegion: document.getElementById("undoRegion"),
     chatStage: document.getElementById("chatStage"),
     newChatButton: document.getElementById("newChatButton"),
     clearThreadsButton: document.getElementById("clearThreadsButton"),
@@ -89,8 +91,11 @@ function getActiveThread() {
     return state.threads.find((thread) => thread.id === state.activeThreadId) || null;
 }
 
+// Also finds a chat deleted in the undo window, so an answer still on its way
+// lands in it and is there if the delete is undone.
 function getThreadById(threadId) {
-    return state.threads.find((thread) => thread.id === threadId) || null;
+    const find = (threads) => threads.find((thread) => thread.id === threadId);
+    return find(state.threads) || (state.undo && find(state.undo.removed)) || null;
 }
 
 function setActiveThread(threadId) {
@@ -132,20 +137,25 @@ function stopActiveRequest() {
     state.abortController.abort();
 }
 
+// How long the Undo notice stays after a delete. It does not count down while
+// the pointer or keyboard focus is on it.
+const UNDO_MS = 6000;
+
+// Deleting takes effect (and is saved) at once, and an Undo notice is offered.
+// A request still running in a deleted chat is only stopped once the delete is
+// final, so undoing brings the chat back with its answer.
 function deleteThread(threadId) {
     const index = state.threads.findIndex((thread) => thread.id === threadId);
     if (index < 0) {
         return;
     }
+    finalizeDelete();
+    const previousActiveId = state.activeThreadId;
+    const [removed] = state.threads.splice(index, 1);
 
-    if (state.loading && state.pendingThreadId === threadId) {
-        stopActiveRequest();
-    }
-
-    state.threads.splice(index, 1);
-
+    let placeholderId = null;
     if (state.threads.length === 0) {
-        createThread();
+        placeholderId = createThread().id;
     } else if (state.activeThreadId === threadId || !getActiveThread()) {
         state.activeThreadId = state.threads[0].id;
         saveState();
@@ -154,16 +164,93 @@ function deleteThread(threadId) {
     }
 
     render();
+    offerUndo([removed], previousActiveId, placeholderId);
 }
 
 function clearThreads() {
-    if (state.loading) {
-        stopActiveRequest();
-    }
+    finalizeDelete();
+    const previousActiveId = state.activeThreadId;
+    const removed = state.threads;
     state.threads = [];
     state.activeThreadId = null;
-    createThread();
+    const placeholderId = createThread().id;
     render();
+    offerUndo(removed, previousActiveId, placeholderId);
+}
+
+function offerUndo(removed, previousActiveId, placeholderId) {
+    state.undo = { removed, previousActiveId, placeholderId, timer: null };
+
+    const toast = document.createElement("div");
+    toast.className = "undo-toast";
+    const text = document.createElement("span");
+    text.textContent = removed.length === 1 ? "Chat deleted." : `${removed.length} chats deleted.`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "undo-button";
+    button.textContent = "Undo";
+    button.addEventListener("click", undoDelete);
+    toast.append(text, button);
+
+    const pause = () => clearTimeout(state.undo && state.undo.timer);
+    const resume = () => {
+        if (state.undo && !toast.matches(":hover") && !toast.contains(document.activeElement)) {
+            startUndoTimer();
+        }
+    };
+    toast.addEventListener("mouseenter", pause);
+    toast.addEventListener("focusin", pause);
+    toast.addEventListener("mouseleave", resume);
+    toast.addEventListener("focusout", () => setTimeout(resume));
+
+    el.undoRegion.replaceChildren(toast);
+    startUndoTimer();
+}
+
+function startUndoTimer() {
+    clearTimeout(state.undo.timer);
+    state.undo.timer = setTimeout(finalizeDelete, UNDO_MS);
+}
+
+// Ends the undo window: the delete stands, and a request still running for a
+// deleted chat is stopped, as its answer has nowhere to go.
+function finalizeDelete() {
+    if (!state.undo) {
+        return;
+    }
+    clearTimeout(state.undo.timer);
+    state.undo = null;
+    el.undoRegion.replaceChildren();
+    const pendingGone = state.pendingThreadId && !state.threads.some((t) => t.id === state.pendingThreadId);
+    if (state.loading && pendingGone) {
+        stopActiveRequest();
+    }
+}
+
+// Puts the deleted chats back and reopens the chat that was open. Chats made
+// since are kept, except the empty one created to replace the last chat.
+function undoDelete() {
+    const undo = state.undo;
+    if (!undo) {
+        return;
+    }
+    clearTimeout(undo.timer);
+    state.undo = null;
+    el.undoRegion.replaceChildren();
+
+    const kept = state.threads.filter(
+        (thread) => !(thread.id === undo.placeholderId && thread.messages.length === 0)
+    );
+    state.threads = [...undo.removed, ...kept];
+    if (state.threads.some((thread) => thread.id === undo.previousActiveId)) {
+        state.activeThreadId = undo.previousActiveId;
+    }
+    saveState();
+    render();
+    const restored = el.threadList.querySelector(".thread-open[aria-current]");
+    if (restored && !restored.closest("[inert]")) {
+        restored.focus();
+    }
 }
 
 function trimTitle(text) {

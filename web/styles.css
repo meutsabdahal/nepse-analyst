@@ -77,6 +77,58 @@ body {
     padding: 0.2rem 0.3rem;
 }
 
+/* The Undo notice after a delete, above the message box. */
+.undo-region {
+    position: fixed;
+    left: 50%;
+    bottom: 6.5rem;
+    transform: translateX(-50%);
+    z-index: 30;
+    max-width: calc(100vw - 2rem);
+    pointer-events: none;
+}
+
+/* Centred over the chat, not the window, while the sidebar (272px) is shown. */
+@media (min-width: 981px) {
+    .undo-region {
+        left: calc(50% + 136px);
+    }
+}
+
+.undo-toast {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.55rem 0.6rem 0.55rem 0.95rem;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    background: var(--sidebar-surface);
+    color: var(--main-text);
+    font-size: 0.86rem;
+    box-shadow: var(--shadow);
+    pointer-events: auto;
+}
+
+.undo-button {
+    border: 0;
+    border-radius: 8px;
+    padding: 0.3rem 0.7rem;
+    background: transparent;
+    color: var(--button);
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.undo-button:hover {
+    background: #3a3228;
+}
+
+.undo-button:focus-visible {
+    outline: 2px solid #c99375;
+    outline-offset: 2px;
+}
+
 /* Only used when the chat list is a drawer (narrow screens). */
 .rail-backdrop {
     display: none;
