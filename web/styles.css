@@ -33,9 +33,11 @@
     /* Accent (buttons, links, focus) */
     --button: #d08a67;
     --button-hover: #dda07f;
-    --on-accent: #ffffff;
-    --on-accent-ring: rgba(255, 255, 255, 0.45);
+    /* Dark text: white on this orange is only 2.8:1. */
+    --on-accent: #1f1711;
+    --on-accent-ring: rgba(31, 23, 17, 0.45);
     --focus-ring: #c99375;
+    --on-stop: #ffffff;
     --stop-bg: #57463c;
     --stop-hover: #685245;
 
@@ -85,6 +87,7 @@
         --on-accent: #ffffff;
         --on-accent-ring: rgba(255, 255, 255, 0.6);
         --focus-ring: #9a4b26;
+        --on-stop: #ffffff;
         --stop-bg: #6e5546;
         --stop-hover: #5e4739;
 
@@ -1006,6 +1009,7 @@ body {
 
 .composer .stop-button {
     background: var(--stop-bg);
+    color: var(--on-stop);
 }
 
 .composer .stop-button:hover:not(:disabled) {
