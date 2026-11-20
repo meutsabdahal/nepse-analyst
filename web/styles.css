@@ -299,20 +299,33 @@ body {
     min-width: 0;
 }
 
-.header-eyebrow {
-    margin: 0;
-    font-size: 0.65rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted-text);
-}
-
 .chat-header h2 {
-    margin: 0.1rem 0 0;
+    margin: 0;
     font-family: "Fraunces", serif;
     font-size: 0.96rem;
     font-weight: 500;
     color: #e8dfd1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.data-status {
+    margin: 0.1rem 0 0;
+    font-size: 0.72rem;
+    color: var(--muted-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.data-status.hidden {
+    display: none;
+}
+
+/* Matches .freshness-chip.stale under answers. */
+.data-status.stale {
+    color: #f4b4a0;
 }
 
 .rail-toggle {
@@ -885,8 +898,8 @@ body {
         font-size: 0.86rem;
     }
 
-    .header-eyebrow {
-        font-size: 0.62rem;
+    .data-status {
+        font-size: 0.68rem;
     }
 
     .facts-grid {

@@ -10,6 +10,7 @@ const state = {
     progressStartedAt: 0,
     stopRequested: false,
     coverage: null,
+    freshness: null,
 };
 
 const el = {
@@ -18,6 +19,8 @@ const el = {
     newChatButton: document.getElementById("newChatButton"),
     clearThreadsButton: document.getElementById("clearThreadsButton"),
     threadList: document.getElementById("threadList"),
+    chatTitle: document.getElementById("chatTitle"),
+    dataStatus: document.getElementById("dataStatus"),
     messageFeed: document.getElementById("messageFeed"),
     composerForm: document.getElementById("composerForm"),
     composerInput: document.getElementById("composerInput"),
@@ -837,6 +840,9 @@ async function sendMessage(message) {
         }
 
         const payload = await readChatStream(response, (event) => setProgressStage(event.label));
+        if (payload.freshness) {
+            state.freshness = payload.freshness;
+        }
         appendMessageToThread(
             requestThreadId,
             "assistant",
@@ -893,7 +899,26 @@ async function sendMessage(message) {
     }
 }
 
+// The header shows the open chat's title and how current the data is; the
+// app's name is already in the sidebar.
+function renderHeader() {
+    const thread = getActiveThread();
+    el.chatTitle.textContent = thread ? thread.title : "New chat";
+
+    const freshness = state.freshness;
+    const status = el.dataStatus;
+    status.classList.toggle("hidden", !(freshness && freshness.label));
+    if (!freshness || !freshness.label) {
+        return;
+    }
+    const stale = freshness.prices_stale || freshness.news_stale;
+    status.classList.toggle("stale", Boolean(stale));
+    status.textContent = stale ? `⚠ ${freshness.label}` : freshness.label;
+    status.title = freshness.warning || "Prices and news are up to date.";
+}
+
 function render() {
+    renderHeader();
     renderThreadList();
     renderMessages();
     updateExampleStripVisibility();
@@ -925,9 +950,11 @@ async function hydrateCoverage() {
         }
         const payload = await response.json();
         state.coverage = Array.isArray(payload.items) ? payload.items : null;
+        state.freshness = payload.freshness || state.freshness;
     } catch {
         return;
     }
+    renderHeader();
     const thread = getActiveThread();
     if (!thread || thread.messages.length === 0) {
         renderMessages();

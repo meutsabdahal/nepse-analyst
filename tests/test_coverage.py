@@ -95,8 +95,13 @@ class DataCoverageTests(unittest.TestCase):
         self.assertEqual([item["label"] for item in items], ["News"])
 
     def test_endpoint_returns_items(self) -> None:
-        with patch.object(app_module, "data_coverage", return_value=[{"label": "Prices"}]):
-            self.assertEqual(app_module.coverage(), {"items": [{"label": "Prices"}]})
+        with patch.object(app_module, "data_coverage", return_value=[{"label": "Prices"}]), patch.object(
+            app_module, "data_freshness", return_value={"label": "Prices to 2026-11-13"}
+        ):
+            self.assertEqual(
+                app_module.coverage(),
+                {"items": [{"label": "Prices"}], "freshness": {"label": "Prices to 2026-11-13"}},
+            )
 
 
 if __name__ == "__main__":

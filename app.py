@@ -110,8 +110,8 @@ def example_questions() -> dict[str, Any]:
 
 @app.get("/api/coverage")
 def coverage() -> dict[str, Any]:
-    """What each dataset covers, with dates, for the first screen."""
-    return {"items": data_coverage()}
+    """What each dataset covers, with dates, for the first screen, and the header's data status."""
+    return {"items": data_coverage(), "freshness": data_freshness()}
 
 
 def _question(payload: ChatRequest) -> str:
