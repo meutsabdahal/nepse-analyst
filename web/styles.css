@@ -186,12 +186,24 @@ body {
 }
 
 .thread-item {
+    position: relative;
     border: 1px solid transparent;
     border-radius: 10px;
-    padding: 0.5rem;
-    cursor: pointer;
     background: transparent;
     transition: background 120ms ease, border-color 120ms ease;
+}
+
+.thread-open {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 9px;
+    /* Room on the right for the delete button, which sits over this corner. */
+    padding: 0.5rem 1.9rem 0.5rem 0.5rem;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 .thread-item:hover {
@@ -203,14 +215,8 @@ body {
     border-color: #4f473d;
 }
 
-.thread-title-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.4rem;
-}
-
 .thread-title {
+    display: block;
     margin: 0;
     font-size: 0.82rem;
     font-weight: 600;
@@ -222,12 +228,16 @@ body {
 }
 
 .thread-subtitle {
+    display: block;
     margin: 0.12rem 0 0;
     font-size: 0.72rem;
     color: #9b9385;
 }
 
 .thread-delete-button {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
     border: 0;
     background: transparent;
     color: #9f9689;
@@ -835,11 +845,17 @@ body {
 .new-chat-button:focus-visible,
 .clear-threads-button:focus-visible,
 .thread-delete-button:focus-visible,
+.thread-open:focus-visible,
 .example-chip:focus-visible,
 .composer button:focus-visible,
 .rail-toggle:focus-visible {
     outline: 2px solid #c99375;
     outline-offset: 2px;
+}
+
+/* Inside the edge: the chat list scrolls and would clip an outer ring. */
+.thread-open:focus-visible {
+    outline-offset: -2px;
 }
 
 .composer button:disabled {

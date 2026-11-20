@@ -221,20 +221,31 @@ function formatValue(value) {
 }
 
 function renderThreadList() {
+    // The list is rebuilt, so put keyboard focus back on the same button after.
+    const focused = el.threadList.contains(document.activeElement) ? document.activeElement : null;
+    const focusedThread = focused ? focused.dataset.threadId : null;
+    const focusedClass = focused ? focused.className : null;
     el.threadList.innerHTML = "";
     el.clearThreadsButton.disabled = state.loading || state.threads.length === 0;
 
     const sorted = [...state.threads].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
     for (const thread of sorted) {
+        const active = thread.id === state.activeThreadId;
         const li = document.createElement("li");
-        li.className = "thread-item" + (thread.id === state.activeThreadId ? " active" : "");
-        li.tabIndex = 0;
+        li.className = "thread-item" + (active ? " active" : "");
 
-        const titleRow = document.createElement("div");
-        titleRow.className = "thread-title-row";
+        // Opening and deleting are sibling buttons: a button cannot contain another.
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "thread-open";
+        open.dataset.threadId = thread.id;
+        if (active) {
+            open.setAttribute("aria-current", "true");
+        }
+        open.addEventListener("click", () => setActiveThread(thread.id));
 
-        const title = document.createElement("p");
+        const title = document.createElement("span");
         title.className = "thread-title";
         title.textContent = thread.title;
         setLang(title, threadLang(thread));
@@ -242,30 +253,29 @@ function renderThreadList() {
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "thread-delete-button";
+        remove.dataset.threadId = thread.id;
         remove.title = "Delete chat";
         remove.setAttribute("aria-label", `Delete chat ${thread.title}`);
         remove.textContent = "\u00d7";
 
-        remove.addEventListener("click", (event) => {
-            event.stopPropagation();
-            deleteThread(thread.id);
-        });
+        remove.addEventListener("click", () => deleteThread(thread.id));
 
-        titleRow.append(title, remove);
-
-        const subtitle = document.createElement("p");
+        const subtitle = document.createElement("span");
         subtitle.className = "thread-subtitle";
         subtitle.textContent = `${thread.messages.length} messages · ${formatTime(thread.updatedAt)}`;
 
-        li.append(titleRow, subtitle);
-        li.addEventListener("click", () => setActiveThread(thread.id));
-        li.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                setActiveThread(thread.id);
-            }
-        });
-
+        open.append(title, subtitle);
+        li.append(open, remove);
         el.threadList.append(li);
+    }
+
+    if (focused) {
+        // A deleted chat's button is gone: focus the open chat instead.
+        const same = [...el.threadList.querySelectorAll(`.${focusedClass}`)].find(
+            (button) => button.dataset.threadId === focusedThread
+        );
+        const fallback = el.threadList.querySelector(".thread-open[aria-current]");
+        (same || fallback || el.newChatButton).focus();
     }
 }
 
