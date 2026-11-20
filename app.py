@@ -8,8 +8,8 @@ import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-from uuid import uuid4
+from typing import Any, Literal
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -26,9 +26,16 @@ from nepse_analyst.chat_helpers import (
     quick_fact_rows,
 )
 from nepse_analyst.column_labels import column_labels
-from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
+from nepse_analyst.config import (
+    CHAT_RATE_LIMIT_PER_DAY,
+    CHAT_RATE_LIMIT_PER_MINUTE,
+    FEEDBACK_MAX_ANSWERS,
+    FEEDBACK_PATH,
+    FEEDBACK_RATE_LIMIT_PER_MINUTE,
+)
 from nepse_analyst.coverage import data_coverage
 from nepse_analyst.example_questions import EXAMPLE_GROUPS, EXAMPLE_QUESTIONS
+from nepse_analyst.feedback import FeedbackStore, answer_record
 from nepse_analyst.messages import message
 from nepse_analyst.pipeline import run
 from nepse_analyst.rate_limit import SlidingWindowLimiter, retry_after_header
@@ -50,6 +57,8 @@ logger = logging.getLogger("nepse_analyst.app")
 chat_limiter = SlidingWindowLimiter(
     [(CHAT_RATE_LIMIT_PER_MINUTE, 60.0), (CHAT_RATE_LIMIT_PER_DAY, 86_400.0)]
 )
+feedback_limiter = SlidingWindowLimiter([(FEEDBACK_RATE_LIMIT_PER_MINUTE, 60.0)])
+feedback_store = FeedbackStore(FEEDBACK_PATH, max_answers=FEEDBACK_MAX_ANSWERS)
 
 
 def client_key(request: Request) -> str:
@@ -83,6 +92,11 @@ def public_error(result: dict[str, Any]) -> str | None:
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class FeedbackRequest(BaseModel):
+    request_id: UUID
+    rating: Literal["up", "down", "none"]
 
 
 @app.get("/")
@@ -157,7 +171,7 @@ def answer_question(query: str) -> dict[str, Any]:
         quick_facts = None
 
     rows_preview = (result.get("sql_rows") or [])[:20]
-    return {
+    response = {
         "request_id": request_id,
         "query": query,
         "answer": result.get("answer", "No response returned."),
@@ -178,6 +192,26 @@ def answer_question(query: str) -> dict[str, Any]:
         "error": public_error(result),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    feedback_store.remember(request_id, answer_record(query, response, result))
+    return response
+
+
+@app.post("/api/feedback")
+def feedback(payload: FeedbackRequest, request: Request) -> dict[str, bool]:
+    """Thumbs up or down on an answer ("none" clears it), saved with the question and answer."""
+    retry_after = feedback_limiter.hit(client_key(request))
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many ratings from this address. Please wait and try again.",
+            headers={"Retry-After": retry_after_header(retry_after)},
+        )
+    request_id = str(payload.request_id)
+    if not feedback_store.rate(request_id, payload.rating):
+        # Answers are remembered in memory: one from before a restart cannot be rated.
+        raise HTTPException(status_code=404, detail="That answer can no longer be rated.")
+    logger.info("chat_feedback request_id=%s rating=%s", request_id, payload.rating)
+    return {"ok": True}
 
 
 @app.post("/api/chat", dependencies=[Depends(enforce_chat_rate_limit)])

@@ -645,6 +645,73 @@ body {
     margin-bottom: 0.4rem;
 }
 
+.rating-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.45rem;
+}
+
+.rating-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.7rem;
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+}
+
+.rating-button svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.rating-button:hover:not(:disabled) {
+    background: var(--control-hover);
+    color: var(--main-text);
+}
+
+/* After .rating-button:hover so the choice keeps its colour under the pointer. */
+.rating-button[aria-pressed="true"]:hover:not(:disabled) {
+    color: var(--button);
+}
+
+/* The chosen rating: accent colour and a filled thumb, not colour alone. */
+.rating-button[aria-pressed="true"] {
+    border-color: var(--button);
+    color: var(--button);
+}
+
+.rating-button[aria-pressed="true"] svg {
+    fill: currentColor;
+    fill-opacity: 0.25;
+}
+
+.rating-button:disabled {
+    cursor: progress;
+}
+
+.rating-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.rating-status {
+    margin-left: 0.2rem;
+    font-size: 0.74rem;
+    color: var(--muted-text);
+}
+
 .retry-button {
     border: 1px solid var(--button);
     border-radius: 999px;

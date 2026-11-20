@@ -35,6 +35,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "processed", "nepse.db")
 VECTOR_STORE_DIR = os.path.join(BASE_DIR, "data", "vector_store")
 NEWS_CACHE_DIR = os.path.join(BASE_DIR, "data", "raw", "news_cache")
+# Thumbs up / down on answers, one JSON object per line (see feedback.py).
+FEEDBACK_PATH = os.getenv("FEEDBACK_PATH", os.path.join(BASE_DIR, "data", "feedback", "ratings.jsonl"))
+# How many recent answers can still be rated (kept in memory, per process).
+FEEDBACK_MAX_ANSWERS = _env_int("FEEDBACK_MAX_ANSWERS", 2000)
+# Ratings per client IP per minute (0 disables). Each one appends a line to the file.
+FEEDBACK_RATE_LIMIT_PER_MINUTE = _env_int("FEEDBACK_RATE_LIMIT_PER_MINUTE", 30)
 
 # Retrieval Settings
 TOP_K_RAG = _env_int("TOP_K_RAG", 5)

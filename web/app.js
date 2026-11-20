@@ -635,6 +635,106 @@ function renderSourceMeta(container, meta, messageId) {
     container.append(details);
 }
 
+// Thumbs up / down under each answer the server produced (it has a request ID
+// and did not fail). The rating is kept with the message, so it shows again
+// after a reload, and sent to /api/feedback, which saves it with the question
+// and answer as evaluation data. Pressing the chosen thumb again clears it.
+const THUMB_PATHS = {
+    up: "M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3",
+    down: "M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17",
+};
+const RATING_LABELS = { up: "Helpful", down: "Not helpful" };
+
+function thumbIcon(kind) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", THUMB_PATHS[kind]);
+    svg.append(path);
+    return svg;
+}
+
+function renderRating(container, message) {
+    const meta = message.meta;
+    if (!meta || !meta.request_id || isRetryable(meta)) {
+        return;
+    }
+    const row = document.createElement("div");
+    row.className = "rating-row";
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", "Rate this answer");
+
+    const buttons = {};
+    for (const kind of ["up", "down"]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `rating-button rating-${kind}`;
+        button.setAttribute("aria-label", RATING_LABELS[kind]);
+        button.title = RATING_LABELS[kind];
+        button.append(thumbIcon(kind));
+        button.addEventListener("click", () => rateAnswer(message, kind, buttons, status));
+        buttons[kind] = button;
+        row.append(button);
+    }
+    const status = document.createElement("span");
+    status.className = "rating-status";
+    status.setAttribute("role", "status");
+    row.append(status);
+
+    showRating(buttons, meta.rating || null);
+    container.append(row);
+}
+
+function showRating(buttons, rating) {
+    for (const [kind, button] of Object.entries(buttons)) {
+        button.setAttribute("aria-pressed", String(rating === kind));
+    }
+}
+
+async function rateAnswer(message, kind, buttons, status) {
+    const previous = message.meta.rating || null;
+    const next = previous === kind ? null : kind;
+    clearTimeout(status.timer);
+    status.textContent = "";
+    // Shown at once; put back if the server does not take it.
+    message.meta.rating = next;
+    showRating(buttons, next);
+    Object.values(buttons).forEach((button) => (button.disabled = true));
+    saveState();
+
+    let problem = null;
+    try {
+        const response = await fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ request_id: message.meta.request_id, rating: next || "none" }),
+        });
+        if (response.status === 404) {
+            problem = "This answer is too old to rate.";
+        } else if (response.status === 429) {
+            problem = "Too many ratings at once. Try again in a minute.";
+        } else if (!response.ok) {
+            problem = "Your rating could not be saved.";
+        }
+    } catch {
+        problem = "Your rating could not be saved.";
+    }
+
+    Object.values(buttons).forEach((button) => (button.disabled = false));
+    if (problem) {
+        message.meta.rating = previous;
+        showRating(buttons, previous);
+        saveState();
+        status.textContent = problem;
+    } else if (next) {
+        status.textContent = "Thanks for the feedback.";
+        status.timer = setTimeout(() => (status.textContent = ""), 4000);
+    }
+}
+
 function sourceCardId(messageId, number) {
     return `source-${messageId}-${number}`;
 }
@@ -758,6 +858,7 @@ function buildMessageNode(messages, index) {
         const passages = message.meta && message.meta.sources ? message.meta.sources.passages : null;
         renderAnswerText(body, message.content, message.id, passages);
         renderSourceMeta(meta, message.meta, message.id);
+        renderRating(meta, message);
     } else {
         body.textContent = message.content;
     }

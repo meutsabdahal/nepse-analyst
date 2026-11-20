@@ -208,6 +208,7 @@ __marimo__/
 
 .env
 data/processed/
+data/feedback/
 data/raw/news_cache/
 data/vector_store/
 __pycache__/
