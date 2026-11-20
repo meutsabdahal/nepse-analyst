@@ -487,6 +487,23 @@ body {
     background: #3d231b;
 }
 
+.coverage-list li {
+    color: var(--muted-text);
+}
+
+/* A dataset older than its freshness threshold, matching .freshness-chip.stale. */
+.coverage-stale {
+    display: inline-block;
+    padding: 0 0.4rem;
+    border: 1px solid #a5513a;
+    border-radius: 999px;
+    background: #3d231b;
+    color: #f4b4a0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .column-unit {
     font-weight: 400;
     color: var(--muted-text);

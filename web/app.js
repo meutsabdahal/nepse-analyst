@@ -9,6 +9,7 @@ const state = {
     progressTimer: null,
     progressStartedAt: 0,
     stopRequested: false,
+    coverage: null,
 };
 
 const el = {
@@ -593,8 +594,10 @@ function renderMessages() {
 
         const body = document.createElement("div");
         body.className = "message-body";
-        body.textContent =
-            "Ask anything about NEPSE fundamentals, dividends, sectors, prices, and recent news.";
+        const intro = document.createElement("p");
+        intro.textContent = "Ask about NEPSE companies, sectors, dividends and prices.";
+        body.append(intro);
+        renderCoverage(body, state.coverage);
 
         empty.append(role, body);
         el.messageFeed.append(empty);
@@ -622,6 +625,35 @@ function renderMessages() {
     }
 
     el.messageFeed.scrollTop = el.messageFeed.scrollHeight;
+}
+
+// What each dataset covers, with dates, so the first screen promises no more
+// than is loaded. Nothing is listed until /api/coverage answers.
+function renderCoverage(container, items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return;
+    }
+    const heading = document.createElement("p");
+    heading.textContent = "The data covers:";
+    const list = document.createElement("ul");
+    list.className = "coverage-list";
+    for (const item of items) {
+        const row = document.createElement("li");
+        const label = document.createElement("strong");
+        label.textContent = item.label;
+        row.append(label, ` ${item.detail}`);
+        if (item.stale) {
+            const tag = document.createElement("span");
+            tag.className = "coverage-stale";
+            tag.textContent = "Out of date";
+            if (typeof item.age_days === "number") {
+                tag.title = `Last updated ${item.age_days} days ago.`;
+            }
+            row.append(" ", tag);
+        }
+        list.append(row);
+    }
+    container.append(heading, list);
 }
 
 // Every group is shown in full; the server keeps the list short.
@@ -885,6 +917,23 @@ async function hydrateExamples() {
     }
 }
 
+async function hydrateCoverage() {
+    try {
+        const response = await fetch("/api/coverage");
+        if (!response.ok) {
+            return;
+        }
+        const payload = await response.json();
+        state.coverage = Array.isArray(payload.items) ? payload.items : null;
+    } catch {
+        return;
+    }
+    const thread = getActiveThread();
+    if (!thread || thread.messages.length === 0) {
+        renderMessages();
+    }
+}
+
 function bootstrapState() {
     loadState();
     if (state.threads.length === 0) {
@@ -940,7 +989,7 @@ async function init() {
     bindEvents();
     autoResizeComposer();
     render();
-    await hydrateExamples();
+    await Promise.all([hydrateExamples(), hydrateCoverage()]);
 }
 
 init();

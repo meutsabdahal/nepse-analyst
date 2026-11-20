@@ -27,6 +27,7 @@ from nepse_analyst.chat_helpers import (
 )
 from nepse_analyst.column_labels import column_labels
 from nepse_analyst.config import CHAT_RATE_LIMIT_PER_DAY, CHAT_RATE_LIMIT_PER_MINUTE
+from nepse_analyst.coverage import data_coverage
 from nepse_analyst.example_questions import EXAMPLE_GROUPS, EXAMPLE_QUESTIONS
 from nepse_analyst.messages import message
 from nepse_analyst.pipeline import run
@@ -105,6 +106,12 @@ def health() -> dict[str, str]:
 def example_questions() -> dict[str, Any]:
     """Example questions grouped by type; ``examples`` is the same list, flat."""
     return {"groups": EXAMPLE_GROUPS, "examples": EXAMPLE_QUESTIONS}
+
+
+@app.get("/api/coverage")
+def coverage() -> dict[str, Any]:
+    """What each dataset covers, with dates, for the first screen."""
+    return {"items": data_coverage()}
 
 
 def _question(payload: ChatRequest) -> str:
