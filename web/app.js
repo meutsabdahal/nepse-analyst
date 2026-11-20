@@ -237,6 +237,7 @@ function renderThreadList() {
         const title = document.createElement("p");
         title.className = "thread-title";
         title.textContent = thread.title;
+        setLang(title, threadLang(thread));
 
         const remove = document.createElement("button");
         remove.type = "button";
@@ -583,6 +584,36 @@ function showSourceCard(messageId, number) {
     card.classList.add("passage-highlight");
 }
 
+// "ne" for Nepali text, from the query_language the server sent with the answer,
+// so screen readers pick a Nepali voice and lines break by Nepali rules. Only the
+// body is marked: role labels, sources and tables stay English.
+// A question is Nepali when it is "ne" or "mixed" (it contains Devanagari); an
+// answer only when "ne", as "mixed" questions are answered in English.
+function messageLang(messages, index) {
+    const message = messages[index];
+    if (message.role === "assistant") {
+        return message.meta && message.meta.query_language === "ne" ? "ne" : null;
+    }
+    const reply = messages[index + 1];
+    const language = reply && reply.role === "assistant" && reply.meta ? reply.meta.query_language : null;
+    return language === "ne" || language === "mixed" ? "ne" : null;
+}
+
+// Removes the attribute rather than setting lang="", which means "unknown
+// language" instead of inheriting the page's English.
+function setLang(element, lang) {
+    if (lang) {
+        element.lang = lang;
+    } else {
+        element.removeAttribute("lang");
+    }
+}
+
+// The title is the first question, so it is Nepali when that question was.
+function threadLang(thread) {
+    return thread && thread.messages.length > 0 ? messageLang(thread.messages, 0) : null;
+}
+
 function renderMessages() {
     const thread = getActiveThread();
     el.messageFeed.innerHTML = "";
@@ -607,7 +638,7 @@ function renderMessages() {
         return;
     }
 
-    for (const message of thread.messages) {
+    thread.messages.forEach((message, index) => {
         const clone = el.messageTemplate.content.firstElementChild.cloneNode(true);
         clone.classList.add(message.role === "user" ? "user" : "assistant");
 
@@ -623,9 +654,10 @@ function renderMessages() {
         } else {
             body.textContent = message.content;
         }
+        setLang(body, messageLang(thread.messages, index));
 
         el.messageFeed.append(clone);
-    }
+    });
 
     el.messageFeed.scrollTop = el.messageFeed.scrollHeight;
 }
@@ -904,6 +936,7 @@ async function sendMessage(message) {
 function renderHeader() {
     const thread = getActiveThread();
     el.chatTitle.textContent = thread ? thread.title : "New chat";
+    setLang(el.chatTitle, threadLang(thread));
 
     const freshness = state.freshness;
     const status = el.dataStatus;
