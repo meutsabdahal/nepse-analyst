@@ -1001,6 +1001,11 @@ function bindEvents() {
     el.composerInput.addEventListener("input", autoResizeComposer);
 
     el.composerInput.addEventListener("keydown", async (event) => {
+        // Enter that accepts an input-method suggestion (Nepali, etc.) must not send.
+        // Safari reports that keydown after composition ends, with keyCode 229.
+        if (event.isComposing || event.keyCode === 229) {
+            return;
+        }
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             const text = el.composerInput.value;
